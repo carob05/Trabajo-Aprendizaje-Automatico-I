@@ -8,7 +8,6 @@ volver a ejecutar la descarga no duplica archivos (idempotencia).
 import os
 import re
 import shutil
-import tempfile
 import zipfile
 from pathlib import Path
 
@@ -144,18 +143,6 @@ def urls_candidatas(r, stem, package_uuid):
     return list(dict.fromkeys(xs))  # sin duplicados, conservando el orden
 
 
-def _mover(origen, destino):
-    """Copia un archivo terminado a su nombre final en dos pasos.
-
-    Primero se escribe 'destino.partial' y recién al terminar se renombra.
-    Así, si la copia se corta, nunca queda un CSV incompleto con nombre final.
-    """
-    parcial = Path(str(destino) + ".partial")
-    with open(origen, "rb") as src, open(parcial, "wb") as dst:
-        shutil.copyfileobj(src, dst, BUFFER)
-    os.replace(parcial, destino)
-
-
 def _extraer_csvs(zip_path, destino_dir, stem):
     """Extrae los CSV de un ZIP al destino con nombres fijos. Devuelve las rutas."""
     salidas = []
@@ -177,52 +164,60 @@ def csvs_existentes(destino_dir, stem):
     return sorted(Path(destino_dir).glob(f"{stem}*.csv"))
 
 
-def descargar_mes(r, anio, mes, package_uuid, destino_dir, headers, log=print):
-    """Descarga un recurso y deja sus CSV en destino_dir. Devuelve la lista de CSV.
+def zip_tiene_csv(path):
+    """True si el ZIP contiene al menos un CSV."""
+    with zipfile.ZipFile(path) as z:
+        return any(not m.is_dir() and m.filename.lower().endswith(".csv") for m in z.infolist())
 
-    La descarga se hace a una carpeta temporal local; solo el CSV final
-    se escribe en el volume. Si el mes ya existe, no descarga nada.
+
+def descargar_a_local(r, anio, mes, package_uuid, destino, headers, log=print):
+    """Descarga un recurso a la ruta local 'destino'. Devuelve 'zip' o 'csv'.
+
+    Prueba las URL candidatas en orden y descarta las respuestas que no sean datos.
     """
     stem = nombre_mes(anio, mes)
-    previos = csvs_existentes(destino_dir, stem)
-    if previos:
-        log(f"[SKIP] {stem}: ya descargado ({len(previos)} archivo/s)")
-        return previos
-
+    destino = Path(destino)
     ultimo_error = None
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        tmp = Path(tmp_dir) / f"{stem}.download"
-        for url in urls_candidatas(r, stem, package_uuid):
-            try:
-                log(f"[TRY]  {stem} <- {url}")
-                with requests.get(url, headers=headers, stream=True, timeout=300, allow_redirects=True) as resp:
-                    if resp.status_code != 200:
-                        ultimo_error = f"HTTP {resp.status_code}"
-                        continue
-                    with open(tmp, "wb") as f:
-                        for chunk in resp.iter_content(BUFFER):
-                            if chunk:
-                                f.write(chunk)
+    for url in urls_candidatas(r, stem, package_uuid):
+        try:
+            log(f"[TRY]  {stem} <- {url}")
+            with requests.get(url, headers=headers, stream=True, timeout=300, allow_redirects=True) as resp:
+                if resp.status_code != 200:
+                    ultimo_error = f"HTTP {resp.status_code}"
+                    continue
+                with open(destino, "wb") as f:
+                    for chunk in resp.iter_content(BUFFER):
+                        if chunk:
+                            f.write(chunk)
 
-                tipo = tipo_archivo(tmp)
-                if tipo == "html":
-                    ultimo_error = "el servidor devolvió HTML"
-                    tmp.unlink(missing_ok=True)
-                    continue
-                if tipo == "csv":
-                    final = Path(destino_dir) / f"{stem}.csv"
-                    _mover(tmp, final)
-                    log(f"[CSV]  {final.name}")
-                    return [final]
-                salidas = _extraer_csvs(tmp, destino_dir, stem)
-                if not salidas:
-                    ultimo_error = "ZIP sin archivos CSV"
-                    continue
-                for s in salidas:
-                    log(f"[ZIP]  {s.name}")
-                return salidas
-            except Exception as e:  # noqa: BLE001 (se registra y se prueba la siguiente URL)
-                ultimo_error = repr(e)
-                tmp.unlink(missing_ok=True)
+            tipo = tipo_archivo(destino)
+            if tipo == "html":
+                ultimo_error = "el servidor devolvió HTML"
+            elif tipo == "zip" and not zip_tiene_csv(destino):
+                ultimo_error = "ZIP sin archivos CSV"
+            else:
+                return tipo
+            destino.unlink(missing_ok=True)
+        except Exception as e:  # noqa: BLE001 (se registra y se prueba la siguiente URL)
+            ultimo_error = repr(e)
+            destino.unlink(missing_ok=True)
 
     raise RuntimeError(f"No se pudo descargar {stem}: {ultimo_error}")
+
+
+def descomprimir_mes(zip_path, destino_dir, log=print):
+    """Deja en destino_dir los CSV de un ZIP viajes_stm_AAAA_MM.zip. Devuelve las rutas.
+
+    Si el mes ya está descomprimido, no hace nada.
+    """
+    stem = Path(zip_path).stem
+    previos = csvs_existentes(destino_dir, stem)
+    if previos:
+        log(f"[SKIP] {stem}: ya descomprimido ({len(previos)} archivo/s)")
+        return previos
+    salidas = _extraer_csvs(zip_path, destino_dir, stem)
+    if not salidas:
+        raise RuntimeError(f"{zip_path}: ZIP sin archivos CSV")
+    for s in salidas:
+        log(f"[ZIP]  {s.name}")
+    return salidas

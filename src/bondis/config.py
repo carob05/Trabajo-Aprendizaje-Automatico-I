@@ -13,6 +13,7 @@ VOLUME = "raw"
 # Ruta de los archivos crudos (viajes STM, clima, feriados, paros)
 RAW_PATH = f"/Volumes/{CATALOG}/{SCHEMA}/{VOLUME}"
 RAW_VIAJES = f"{RAW_PATH}/viajes"
+RAW_VIAJES_ZIP = f"{RAW_PATH}/viajes_zip"  # ZIP mensuales subidos desde local
 RAW_CLIMA = f"{RAW_PATH}/clima"
 RAW_CALENDARIO = f"{RAW_PATH}/calendario"
 RAW_PAROS = f"{RAW_PATH}/paros"
