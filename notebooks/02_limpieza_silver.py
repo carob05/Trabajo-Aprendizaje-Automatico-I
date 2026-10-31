@@ -211,3 +211,11 @@ display(s.groupBy("dsc_linea")
          .pivot("anio", [2024, 2025])
          .agg(F.countDistinct("fecha"))
          .orderBy("dsc_linea"))
+
+# COMMAND ----------
+
+display(spark.table(config.TABLE_SILVER)
+        .groupBy("linea_codigo")
+        .agg(F.countDistinct("dsc_linea").alias("nombres"),
+             F.collect_set("dsc_linea").alias("cuales"))
+        .where("nombres > 1"))

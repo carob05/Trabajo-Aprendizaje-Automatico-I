@@ -37,6 +37,7 @@ TABLE_CALIDAD_SILVER = f"{CATALOG}.{SCHEMA}.calidad_silver"   # métricas de lim
 TABLE_LINEAS = f"{CATALOG}.{SCHEMA}.lineas"                   # líneas incluidas y excluidas
 TABLE_CALENDARIO = f"{CATALOG}.{SCHEMA}.calendario"
 TABLE_CLIMA = f"{CATALOG}.{SCHEMA}.clima"
+TABLE_RESULTADOS = f"{CATALOG}.{SCHEMA}.resultados_modelos"   # métricas de cada modelo (05 a 07)
 
 # Criterio de inclusión de líneas en gold: días mínimos de servicio en CADA año
 MIN_DIAS_LINEA = 100
