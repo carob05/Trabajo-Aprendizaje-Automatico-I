@@ -23,14 +23,10 @@ RAW_PAROS = f"{RAW_PATH}/paros"
 CLIMA_PRONOSTICO = f"{RAW_CLIMA}/clima_pronostico_2024_2025.csv"
 CLIMA_OBSERVADO = f"{RAW_CLIMA}/clima_observado_2024_2025.csv"
 
-# ---------------------------------------------------------------------------
-# Fuente de los viajes: portal CKAN de la Intendencia de Montevideo
-# ---------------------------------------------------------------------------
-CKAN_API = "https://ckan.montevideo.gub.uy/api/3/action/package_show"
-CKAN_DATASET_VIAJES = (
-    "viajes-realizados-en-los-omnibus-del-sistema-de-transporte-metropolitano-stm"
-)
-HTTP_HEADERS = {"User-Agent": "Mozilla/5.0 (proyecto academico FING-UdelaR)"}
+# Fuente de los viajes: dataset "Viajes realizados en los ómnibus del STM" del
+# portal de datos abiertos de la IM. Los ZIP mensuales se descargan a mano y se
+# suben a RAW_ZIP (Databricks no tiene conexión con el portal). Ver README.
+
 # ---------------------------------------------------------------------------
 # Tablas de cada capa (arquitectura medallion)
 # ---------------------------------------------------------------------------
@@ -54,19 +50,25 @@ TIMEZONE = "America/Montevideo"
 # Filtrar siempre con  fecha >= inicio  y  fecha < fin.
 # ---------------------------------------------------------------------------
 FECHA_INICIO = "2024-01-01"
-FECHA_FIN = "2027-01-01"            # incluye los meses disponibles de 2026
-
 FECHA_INICIO_VAL = "2024-10-01"     # train: [2024-01-01, 2024-10-01)
 FECHA_INICIO_TEST = "2025-01-01"    # val:   [2024-10-01, 2025-01-01)
-FECHA_INICIO_VERIF = "2026-01-01"   # test:  [2025-01-01, 2026-01-01)
-                                    # verif: [2026-01-01, FECHA_FIN)
+FECHA_FIN = "2026-01-01"            # test:  [2025-01-01, 2026-01-01)
+
+# 2026 queda fuera por ahora: calendario.py y el clima solo cubren 2024 y 2025.
+# Para sumarlo: completar calendario.py, descargar el clima de 2026, poner
+# FECHA_FIN = "2027-01-01", agregar "verif": ("2026-01-01", FECHA_FIN) a
+# PARTICIONES y volver a ejecutar 03_features_gold. Bronze y silver no cambian.
 
 PARTICIONES = {
     "train": (FECHA_INICIO, FECHA_INICIO_VAL),
     "val": (FECHA_INICIO_VAL, FECHA_INICIO_TEST),
-    "test": (FECHA_INICIO_TEST, FECHA_INICIO_VERIF),
-    "verif": (FECHA_INICIO_VERIF, FECHA_FIN),
+    "test": (FECHA_INICIO_TEST, FECHA_FIN),
 }
+
+# Entrenamiento final: elegidos el modelo y los hiperparámetros con val, se
+# reentrena con train + val (todo 2024) antes de evaluar en test. Así el
+# modelo evaluado también vio la estacionalidad de octubre a diciembre.
+PARTICION_TRAIN_FINAL = (FECHA_INICIO, FECHA_INICIO_TEST)
 
 # ---------------------------------------------------------------------------
 # Horizonte de predicción

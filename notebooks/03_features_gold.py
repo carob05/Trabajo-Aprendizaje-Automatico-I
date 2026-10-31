@@ -12,7 +12,7 @@
 # MAGIC | 4. Calendario | Día de la semana, mes, feriados, Carnaval, Turismo, elecciones, días sin servicio, clases de ANEP |
 # MAGIC | 4b. Clima | Temperatura y lluvia **pronosticadas con 24 h de anticipación** (promedio de 4 modelos) |
 # MAGIC | 5. Rezagos | Demanda de la misma línea y hora 1, 7, 14, 21 y 28 días antes; promedio y mediana de 4 semanas; total del día anterior |
-# MAGIC | 6. Partición | `train`, `val`, `test`, `verif` según las fechas de `config` |
+# MAGIC | 6. Partición | `train`, `val`, `test` según las fechas de `config` |
 # MAGIC
 # MAGIC Los rezagos solo usan días **anteriores** al día a predecir, de acuerdo con el horizonte de 1 día.
 # MAGIC
@@ -44,13 +44,20 @@ spark.conf.set("spark.sql.session.timeZone", config.TIMEZONE)
 # MAGIC
 # MAGIC Recorre los ~580 millones de filas de silver una sola vez. Se guarda en una tabla intermedia
 # MAGIC (`demanda_agregada`) para no repetir este paso, que es el más costoso.
+# MAGIC
+# MAGIC Solo se agrega el período del proyecto `[FECHA_INICIO, FECHA_FIN)`. Si silver tiene meses
+# MAGIC posteriores (por ejemplo, de 2026), no afectan la selección de líneas ni el control de pasajeros.
 
 # COMMAND ----------
 
 TABLE_AGREGADA = f"{config.CATALOG}.{config.SCHEMA}.demanda_agregada"
 
+silver_periodo = spark.table(config.TABLE_SILVER).where(
+    (F.col("fecha") >= F.to_date(F.lit(config.FECHA_INICIO)))
+    & (F.col("fecha") < F.to_date(F.lit(config.FECHA_FIN)))
+)
 (
-    gold.agregar(spark.table(config.TABLE_SILVER))
+    gold.agregar(silver_periodo)
     .write.format("delta").mode("overwrite").option("overwriteSchema", "true")
     .saveAsTable(TABLE_AGREGADA)
 )

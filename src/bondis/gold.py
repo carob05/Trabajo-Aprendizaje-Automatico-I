@@ -5,7 +5,7 @@ Pasos:
 2. lineas_incluidas: líneas con servicio suficiente en todos los años
 3. grilla:           todas las combinaciones linea x fecha x hora, con 0 donde no hubo subidas
 4. agregar_rezagos:  demanda de días anteriores (solo información disponible al cierre de D-1)
-5. asignar_particion: train / val / test / verif según las fechas de config
+5. asignar_particion: train / val / test según config.PARTICIONES
 """
 
 from pyspark.sql import functions as F
