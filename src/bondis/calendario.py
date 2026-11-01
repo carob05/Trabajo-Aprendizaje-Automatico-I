@@ -1,4 +1,4 @@
-"""Calendario de Uruguay para 2024 y 2025: feriados, Carnaval, Turismo y elecciones.
+"""Calendario de Uruguay para 2024 y 2025: feriados, Carnaval, Turismo, elecciones y fiestas de fin de año.
 
 Fechas según el día en que efectivamente se observaron (con los traslados de la
 Ley 16.805: los feriados trasladables que caen martes o miércoles pasan al lunes
@@ -68,6 +68,20 @@ ELECCIONES = {
     date(2025, 5, 11): "Elecciones departamentales",
 }
 
+# Fiestas de fin de año: del 24 al 31 de diciembre. Solo el 25 es feriado, pero toda la
+# semana tiene una demanda distinta de la habitual. En la validación de 2024 (05_baseline),
+# el 24, 25, 26, 27, 30 y 31 de diciembre sumaron cerca de la cuarta parte del error de las
+# líneas base, siendo menos del 7 % de los días. Es una regla de calendario (se conoce
+# con anticipación) y se fija por fecha, sin mirar datos de test.
+FIESTAS_FIN_DE_ANIO = (12, 24, 31)   # (mes, primer día, último día)
+NOMBRES_FIESTAS = {(12, 24): "Víspera de Navidad", (12, 31): "Fin de Año"}
+
+
+def es_semana_fiestas(d):
+    """True del 24 al 31 de diciembre, ambos incluidos."""
+    mes, primero, ultimo = FIESTAS_FIN_DE_ANIO
+    return d.month == mes and primero <= d.day <= ultimo
+
 
 # Días con servicio de ómnibus prácticamente nulo (se sabe de antemano).
 # Verificado en los datos: el sistema completo registra entre 116 y 150 pasajeros.
@@ -120,7 +134,8 @@ def filas_calendario(inicio, fin):
     turismo = {d for a, b in TURISMO for d in _dias(a, b)}
     filas = []
     for d in _dias(inicio, fin):
-        nombre = NO_LABORABLES.get(d) or LABORABLES.get(d) or ELECCIONES.get(d)
+        nombre = (NO_LABORABLES.get(d) or LABORABLES.get(d) or ELECCIONES.get(d)
+                  or NOMBRES_FIESTAS.get((d.month, d.day)))
         if d in CARNAVAL:
             nombre = "Carnaval"
         elif d in turismo and not nombre:
@@ -133,6 +148,9 @@ def filas_calendario(inicio, fin):
             "es_turismo": d in turismo,
             "es_eleccion": d in ELECCIONES,
             "es_dia_sin_servicio": d in SIN_SERVICIO,
+            "es_vispera_navidad": (d.month, d.day) == (12, 24),
+            "es_fin_de_anio": (d.month, d.day) == (12, 31),
+            "es_semana_fiestas": es_semana_fiestas(d),
             "clases_primaria": hay_clases("primaria", d),
             "clases_media": hay_clases("media", d),
             "nombre_dia_especial": nombre,
@@ -152,6 +170,9 @@ def tabla_calendario(spark, inicio, fin):
         StructField("es_turismo", BooleanType(), False),
         StructField("es_eleccion", BooleanType(), False),
         StructField("es_dia_sin_servicio", BooleanType(), False),
+        StructField("es_vispera_navidad", BooleanType(), False),
+        StructField("es_fin_de_anio", BooleanType(), False),
+        StructField("es_semana_fiestas", BooleanType(), False),
         StructField("clases_primaria", BooleanType(), False),
         StructField("clases_media", BooleanType(), False),
         StructField("nombre_dia_especial", StringType(), True),
