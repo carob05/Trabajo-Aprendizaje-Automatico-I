@@ -1,30 +1,30 @@
-"""Calendario de Uruguay para 2024 y 2025: feriados, Carnaval, Turismo, elecciones y fiestas de fin de año.
+"""Calendario de Uruguay para 2024 y 2025: feriados, Carnaval, Turismo, elecciones, fiestas y clases.
 
-Fechas según el día en que efectivamente se observaron (con los traslados de la
-Ley 16.805: los feriados trasladables que caen martes o miércoles pasan al lunes
-anterior, y los que caen jueves o viernes, al lunes siguiente).
+Las fechas son las del día en que de verdad se festejó cada feriado. Algunos feriados
+se mueven por ley (Ley 16.805). Si caen martes o miércoles, pasan al lunes anterior.
+Si caen jueves o viernes, pasan al lunes siguiente.
 
-Fuentes de feriados:
+De dónde sacamos los feriados:
 - El Observador, "Feriados en Uruguay 2025" (2 de enero de 2025).
 - Prensa Mercosur, "Feriados en Uruguay 2024: lista completa" (29 de diciembre de 2023).
 
-Fuentes del calendario escolar de ANEP:
+De dónde sacamos las fechas de clases de ANEP:
 - Ámbito, "Ya está el calendario del ciclo lectivo 2024" (inicio, vacaciones y fin 2024).
 - Subrayado, 5 de marzo de 2025, "comienzo de clases 2025" (inicio 2025).
 - Montevideo Portal, "Vacaciones de julio 2025" (una semana primaria, dos semanas media).
-- Bloomberg Línea, "Vacaciones de primavera 2025" (22 a 24 de setiembre; fin de clases).
+- Bloomberg Línea, "Vacaciones de primavera 2025" (22 a 24 de setiembre, y fin de clases).
 - Montevideo Portal, "Fin de cursos 2025" (fin de clases por nivel).
 
-Simplificación: en enseñanza media cada plan termina en una fecha distinta (entre fines
-de noviembre y principios de diciembre); se usa la fecha de la mayoría de los cursos.
-UdelaR no se incluye: cada facultad tiene su propio calendario.
+Para simplificar: en liceos y UTU cada plan termina en una fecha distinta (entre fines
+de noviembre y principios de diciembre). Usamos la fecha en que termina la mayoría.
+UdelaR no está incluida porque cada facultad tiene su propio calendario.
 
-Para agregar años, completar los diccionarios de abajo con las fechas oficiales.
+Para agregar otro año, hay que completar las listas de abajo con las fechas oficiales.
 """
 
 from datetime import date, timedelta
 
-# Feriados no laborables (todo el comercio y la actividad cierran).
+# Feriados no laborables: cierra casi todo (comercios, oficinas).
 NO_LABORABLES = {
     date(2024, 1, 1): "Año Nuevo",
     date(2024, 5, 1): "Día de los Trabajadores",
@@ -39,7 +39,7 @@ NO_LABORABLES = {
     date(2025, 12, 25): "Navidad",
 }
 
-# Feriados laborables, en la fecha en que se observaron.
+# Feriados laborables: el comercio puede abrir. Va la fecha en que se festejaron de verdad.
 LABORABLES = {
     date(2024, 1, 6): "Día de Reyes",
     date(2024, 4, 22): "Desembarco de los 33 Orientales (trasladado del viernes 19)",
@@ -57,10 +57,10 @@ LABORABLES = {
 
 CARNAVAL = [date(2024, 2, 12), date(2024, 2, 13), date(2025, 3, 3), date(2025, 3, 4)]
 
-# Semana de Turismo completa (lunes a domingo).
+# Semana de Turismo completa, de lunes a domingo.
 TURISMO = [(date(2024, 3, 25), date(2024, 3, 31)), (date(2025, 4, 14), date(2025, 4, 20))]
 
-# Elecciones nacionales y departamentales (domingos).
+# Elecciones nacionales y departamentales (siempre caen domingo).
 ELECCIONES = {
     date(2024, 6, 30): "Elecciones internas",
     date(2024, 10, 27): "Elecciones nacionales",
@@ -68,26 +68,27 @@ ELECCIONES = {
     date(2025, 5, 11): "Elecciones departamentales",
 }
 
-# Fiestas de fin de año: del 24 al 31 de diciembre. Solo el 25 es feriado, pero toda la
-# semana tiene una demanda distinta de la habitual. En la validación de 2024 (05_baseline),
-# el 24, 25, 26, 27, 30 y 31 de diciembre sumaron cerca de la cuarta parte del error de las
-# líneas base, siendo menos del 7 % de los días. Es una regla de calendario (se conoce
-# con anticipación) y se fija por fecha, sin mirar datos de test.
+# Fiestas de fin de año: del 24 al 31 de diciembre. Solo el 25 es feriado, pero en toda esa
+# semana la gente viaja distinto que de costumbre. En validación (notebook 05) esos días
+# fueron menos del 7 % de los días, pero juntaron cerca de la cuarta parte del error.
+# Como las fechas se saben de antemano, se pueden usar sin problema. Se eligieron por
+# fecha, sin mirar los datos de test.
 FIESTAS_FIN_DE_ANIO = (12, 24, 31)   # (mes, primer día, último día)
 NOMBRES_FIESTAS = {(12, 24): "Víspera de Navidad", (12, 31): "Fin de Año"}
 
 
 def es_semana_fiestas(d):
-    """True del 24 al 31 de diciembre, ambos incluidos."""
+    """Verdadero si la fecha está entre el 24 y el 31 de diciembre, los dos incluidos."""
     mes, primero, ultimo = FIESTAS_FIN_DE_ANIO
     return d.month == mes and primero <= d.day <= ultimo
 
 
-# Días con servicio de ómnibus prácticamente nulo (se sabe de antemano).
-# Verificado en los datos: el sistema completo registra entre 116 y 150 pasajeros.
+# Días en que casi no hay ómnibus (se sabe de antemano).
+# Lo revisamos en los datos: esos días todo el sistema lleva entre 116 y 150 pasajeros.
 SIN_SERVICIO = [date(2024, 1, 1), date(2024, 5, 1), date(2025, 1, 1), date(2025, 5, 1)]
 
-# Calendario escolar de ANEP: (inicio, fin) del año lectivo y lista de recesos (inicio, fin).
+# Calendario de clases de ANEP. Para cada año: cuándo empiezan y terminan las clases (periodo)
+# y las vacaciones del medio (recesos), cada una con su día de inicio y de fin.
 CLASES = {
     "primaria": {
         2024: {"periodo": (date(2024, 3, 4), date(2024, 12, 13)),
@@ -109,9 +110,9 @@ CLASES = {
 
 
 def hay_clases(nivel, d):
-    """True si la fecha está dentro del año lectivo del nivel y fuera de los recesos.
+    """Verdadero si ese día hay clases: está dentro del año lectivo y no cae en vacaciones.
 
-    No mira el día de la semana ni los feriados: eso ya lo indican otras variables.
+    No mira si es fin de semana o feriado, porque eso ya lo dicen otras columnas.
     """
     cal = CLASES[nivel].get(d.year)
     if cal is None:
@@ -130,7 +131,7 @@ def _dias(inicio, fin):
 
 
 def filas_calendario(inicio, fin):
-    """Lista de dicts, uno por día entre inicio y fin (ambos incluidos)."""
+    """Una fila (diccionario) por cada día entre inicio y fin, los dos incluidos."""
     turismo = {d for a, b in TURISMO for d in _dias(a, b)}
     filas = []
     for d in _dias(inicio, fin):
@@ -159,7 +160,7 @@ def filas_calendario(inicio, fin):
 
 
 def tabla_calendario(spark, inicio, fin):
-    """DataFrame de Spark con el calendario entre inicio y fin."""
+    """El mismo calendario, pero como tabla de Spark."""
     from pyspark.sql.types import BooleanType, DateType, StringType, StructField, StructType
 
     esquema = StructType([

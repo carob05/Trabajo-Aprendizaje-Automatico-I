@@ -1,7 +1,7 @@
-"""Variables derivadas de gold que usan los notebooks de modelado (05 a 07).
+"""Variables extra que usan los notebooks de modelos (05 a 07).
 
-Se calculan acá y no en gold porque son decisiones de modelado (pueden cambiar sin
-tener que reconstruir gold).
+No se guardan en la tabla gold porque son decisiones nuestras de cómo modelar.
+Si las queremos cambiar, no hace falta volver a armar gold entera.
 """
 
 from pyspark.sql import functions as F
@@ -10,10 +10,16 @@ TIPOS_DIA = ["hábil", "sábado", "domingo", "turismo", "feriado"]
 
 
 def con_tipo_dia(df):
-    """Agrega 'tipo_dia'. El orden importa: un feriado no laborable o Carnaval le gana a todo.
+    """Agrega la columna 'tipo_dia' a cada fila.
 
-    Los feriados laborables (el comercio abre) quedan con el tipo de su día de la semana;
-    se distinguen con 'es_feriado'.
+    El orden de las reglas importa, se aplica la primera que se cumple:
+    1. Si es feriado no laborable o Carnaval, es "feriado".
+    2. Si es Semana de Turismo, es "turismo".
+    3. Si es domingo, es "domingo". Si es sábado, es "sábado".
+    4. Si no es nada de lo anterior, es "hábil".
+
+    Los feriados laborables (los que el comercio abre) quedan como el día de la semana
+    que les toca. Para saber que son feriado se mira la columna 'es_feriado'.
     """
     return df.withColumn(
         "tipo_dia",
@@ -26,10 +32,13 @@ def con_tipo_dia(df):
 
 
 def tamano_linea(train, n_grandes=20, n_medianas=30):
-    """[Spark] DataFrame (linea, tamano_linea) según los pasajeros totales en train.
+    """[Spark] Clasifica cada línea en grande, mediana o chica según sus pasajeros en train.
 
-    'grande' = las n_grandes con más pasajeros; 'mediana' = las n_medianas siguientes;
-    'chica' = el resto. Se calcula con train para no mirar val ni test.
+    Se ordenan las líneas de más a menos pasajeros:
+    - las primeras 20 son "grande"
+    - las 30 que siguen son "mediana"
+    - el resto son "chica"
+    Se calcula solo con train para no mirar los datos de val ni de test.
     """
     from pyspark.sql.window import Window
 

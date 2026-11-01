@@ -61,7 +61,7 @@ def test_desglose_por_grupo(datos):
 def test_mae_nunca_supera_rmse(datos):
     y, preds, dias, _ = datos
     t = metricas.metricas(_estadisticos(y, preds, dias))
-    assert (t["mae"] <= t["rmse"]).all()            # Semana 3: siempre MAE <= RMSE
+    assert (t["mae"] <= t["rmse"]).all()            # siempre MAE <= RMSE
 
 
 def test_predecir_la_media_da_r2_cero():

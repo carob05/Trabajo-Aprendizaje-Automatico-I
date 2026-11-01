@@ -1,22 +1,24 @@
-"""Construcción de la capa gold: una fila por línea, fecha y hora.
+"""Armado de la tabla gold: una fila por línea, día y hora.
 
 Pasos:
-1. agregar:          silver -> pasajeros por (linea, fecha, hora)
-2. lineas_incluidas: líneas con servicio suficiente en todos los años
-3. grilla:           todas las combinaciones linea x fecha x hora, con 0 donde no hubo subidas
-4. agregar_rezagos:  demanda de días anteriores (solo información disponible al cierre de D-1)
-5. asignar_particion: train / val / test según config.PARTICIONES
+1. agregar:           suma los pasajeros de silver por línea, día y hora
+2. lineas_incluidas:  elige las líneas que funcionaron suficientes días en cada año
+3. grilla:            arma todas las combinaciones línea x día x hora, con 0 donde nadie subió
+4. agregar_rezagos:   agrega cuántos pasajeros hubo en días anteriores
+5. asignar_particion: marca cada fila como train, val o test según la fecha
 """
 
 from pyspark.sql import functions as F
 from pyspark.sql.window import Window
 
-# Rezagos en días, para la misma línea y la misma hora.
+# Un "rezago" es mirar para atrás: cuántos pasajeros hubo en la misma línea y a la
+# misma hora, 1, 7, 14, 21 y 28 días antes. Ejemplo: para el martes 12 a las 8,
+# el rezago de 7 días es lo que pasó el martes 5 a las 8.
 REZAGOS_DIAS = [1, 7, 14, 21, 28]
 
 
 def agregar(silver):
-    """Pasajeros (suma de cantidad_pasajeros) y validaciones por línea, fecha y hora."""
+    """Suma los pasajeros (y cuenta los viajes) por línea, día y hora."""
     return (
         silver
         .groupBy(F.col("dsc_linea").alias("linea"), "fecha", "hora")
@@ -28,7 +30,7 @@ def agregar(silver):
 
 
 def resumen_lineas(agregado):
-    """Por línea: días con servicio en cada año y pasajeros totales."""
+    """Por cada línea y cada año: cuántos días funcionó y cuántos pasajeros llevó."""
     return (
         agregado
         .withColumn("anio", F.year("fecha"))
@@ -39,7 +41,11 @@ def resumen_lineas(agregado):
 
 
 def lineas_incluidas(resumen, anios, min_dias):
-    """DataFrame (linea, incluida, motivo) aplicando el mínimo de días en cada año."""
+    """Marca cada línea como incluida o no. Se incluye si funcionó al menos min_dias en CADA año.
+
+    Así se dejan afuera las líneas que se crearon o se cerraron en el medio del período,
+    porque no tendrían datos para entrenar o para probar.
+    """
     por_linea = resumen.groupBy("linea").agg(
         *[F.max(F.when(F.col("anio") == a, F.col("dias_servicio"))).alias(f"dias_{a}") for a in anios],
         F.sum("pasajeros").alias("pasajeros_total"),
@@ -57,7 +63,7 @@ def lineas_incluidas(resumen, anios, min_dias):
 
 
 def grilla(spark, lineas, fecha_inicio, fecha_fin):
-    """Todas las combinaciones linea x fecha x hora. fecha_fin incluida."""
+    """Todas las combinaciones de línea, día y hora (las 24 horas de cada día). Incluye fecha_fin."""
     fechas = spark.sql(
         f"SELECT explode(sequence(to_date('{fecha_inicio}'), to_date('{fecha_fin}'), interval 1 day)) AS fecha"
     )
@@ -66,7 +72,11 @@ def grilla(spark, lineas, fecha_inicio, fecha_fin):
 
 
 def completar(grilla_df, agregado):
-    """Une la grilla con lo observado; las combinaciones sin subidas quedan en 0."""
+    """Junta la grilla con los pasajeros reales. Donde no subió nadie, pone 0.
+
+    Esto es importante: si a las 3 de la mañana no subió nadie, en silver no hay ninguna
+    fila para esa hora. Pero para el modelo "0 pasajeros" es un dato, no un dato que falta.
+    """
     return (
         grilla_df
         .join(agregado, ["linea", "fecha", "hora"], "left")
@@ -75,25 +85,27 @@ def completar(grilla_df, agregado):
 
 
 def agregar_rezagos(df):
-    """Rezagos de la misma línea y hora, y total de la línea en el día anterior.
+    """Agrega los rezagos de la misma línea y hora, y el total de la línea el día anterior.
 
-    Como la grilla tiene todas las fechas, desplazar n filas equivale a n días.
-    Solo se usan días anteriores al día a predecir (horizonte de 1 día).
+    Como la grilla tiene todos los días sin huecos, moverse n filas para atrás es lo mismo
+    que moverse n días para atrás. Solo se miran días ANTERIORES al que se quiere predecir.
     """
     w = Window.partitionBy("linea", "hora").orderBy("fecha")
     for n in REZAGOS_DIAS:
         df = df.withColumn(f"pasajeros_lag_{n}d", F.lag("pasajeros", n).over(w))
 
-    # Promedio de la misma hora y el mismo día de la semana en las 4 semanas anteriores
+    # Promedio de las 4 semanas anteriores, mismo día de la semana y misma hora
     df = df.withColumn(
         "pasajeros_prom_4sem",
         (F.col("pasajeros_lag_7d") + F.col("pasajeros_lag_14d")
          + F.col("pasajeros_lag_21d") + F.col("pasajeros_lag_28d")) / 4.0,
     )
 
-    # Mediana de las mismas 4 semanas: a diferencia del promedio, una sola semana
-    # atípica (feriado, Carnaval, paro) no la mueve. Con 4 valores, la mediana es el
-    # promedio de los dos del medio. Si falta alguno de los 4, queda vacía.
+    # Mediana de esas mismas 4 semanas. La ventaja frente al promedio es que una semana
+    # rara (un feriado, Carnaval, un paro) no la mueve. Con 4 valores, la mediana es el
+    # promedio de los dos del medio. Ejemplo: con 100, 110, 120 y 10, ordenados quedan
+    # 10, 100, 110, 120, y la mediana es (100 + 110) / 2 = 105. El promedio daría 85.
+    # Si falta alguno de los 4 valores, la mediana queda vacía.
     semanas = [F.col(f"pasajeros_lag_{n}d") for n in (7, 14, 21, 28)]
     ordenados = F.sort_array(F.array(*semanas))
     alguno_nulo = None
@@ -106,7 +118,7 @@ def agregar_rezagos(df):
         ),
     )
 
-    # Total de la línea en el día anterior (todas las horas)
+    # Total de pasajeros de la línea en todo el día anterior (sumando las 24 horas)
     total_dia = df.groupBy("linea", "fecha").agg(F.sum("pasajeros").alias("_total_dia"))
     w_dia = Window.partitionBy("linea").orderBy("fecha")
     total_dia = total_dia.withColumn(
@@ -116,29 +128,29 @@ def agregar_rezagos(df):
 
 
 def agregar_variables_fecha(df, calendario):
-    """Variables de calendario derivadas de la fecha y unión con feriados."""
+    """Agrega año, mes, día del mes, día de la semana y las columnas del calendario (feriados, clases)."""
     return (
         df
         .withColumn("anio", F.year("fecha"))
         .withColumn("mes", F.month("fecha"))
         .withColumn("dia_mes", F.dayofmonth("fecha"))
-        .withColumn("dia_semana", ((F.dayofweek("fecha") + 5) % 7) + 1)   # 1 = lunes
+        .withColumn("dia_semana", ((F.dayofweek("fecha") + 5) % 7) + 1)   # 1 = lunes, 7 = domingo
         .withColumn("es_fin_de_semana", F.col("dia_semana") >= 6)
         .join(calendario, "fecha", "left")
     )
 
 
 def tipo_linea(df):
-    """Prefijo alfabético del nombre de la línea ('L4' -> 'L'); 'NUM' si es solo número."""
+    """Agrega 'tipo_linea': las letras del principio del nombre ('L4' da 'L'). Si es solo número, 'NUM'."""
     prefijo = F.regexp_extract(F.upper(F.col("linea")), r"^([A-Z]+)", 1)
     return df.withColumn("tipo_linea", F.when(prefijo == "", "NUM").otherwise(prefijo))
 
 
 def marcar_fila_completa(df, columnas):
-    """Columna 'fila_completa': True si ninguna de las columnas indicadas está vacía.
+    """Agrega 'fila_completa': verdadero si ninguna de las columnas indicadas está vacía.
 
-    El modelado usa solo filas completas. Así todos los modelos y configuraciones
-    se entrenan con exactamente las mismas filas.
+    Los modelos usan solo filas completas. Así todos se entrenan y se prueban
+    con exactamente las mismas filas, y la comparación es justa.
     """
     cond = None
     for c in columnas:
@@ -148,7 +160,10 @@ def marcar_fila_completa(df, columnas):
 
 
 def asignar_particion(df, particiones):
-    """Columna 'particion' según {'train': (inicio, fin), ...}; intervalos [inicio, fin)."""
+    """Agrega 'particion' (train, val o test) según la fecha de cada fila.
+
+    Cada conjunto incluye su fecha de inicio pero no su fecha de fin.
+    """
     expr = None
     for nombre, (inicio, fin) in particiones.items():
         cond = (F.col("fecha") >= F.to_date(F.lit(inicio))) & (F.col("fecha") < F.to_date(F.lit(fin)))

@@ -1,17 +1,24 @@
-"""Métricas de regresión comunes a todos los modelos (baselines, lineal, árboles).
+"""Cómo medimos el error de los modelos. Se usa igual para todos (reglas simples, lineal, árboles).
 
-Idea central: en vez de calcular cada métrica recorriendo todas las filas, se calculan
-una sola vez, en Spark, unas pocas SUMAS POR DÍA (cantidad de filas, suma de errores,
-de errores absolutos y de errores al cuadrado, suma de y y de y al cuadrado). Con esas
-sumas se recuperan exactamente MAE, RMSE, R², WAPE y el sesgo, de cualquier conjunto de días.
+Truco para que sea rápido: en vez de recorrer las millones de filas cada vez que queremos
+una métrica, primero calculamos unas pocas SUMAS POR DÍA:
+    n       = cantidad de filas del día
+    s_err   = suma de los errores (predicción menos real)
+    s_abs   = suma de los errores en valor absoluto (sin signo)
+    s_cuad  = suma de los errores al cuadrado
+    s_y     = suma de los pasajeros reales
+    s_y2    = suma de los pasajeros reales al cuadrado
+Con esas sumas se puede sacar el MAE, el RMSE, el R², el WAPE y el sesgo de cualquier
+grupo de días, sin volver a mirar las filas.
 
-Eso permite dos cosas sin volver a tocar los datos:
-- desglosar por grupos (tipo de día, tamaño de línea), y
-- calcular intervalos por bootstrap REMUESTREANDO DÍAS. Se remuestrean días y no filas
-  porque las filas de un mismo día comparten calendario y clima: no son independientes.
+Eso nos sirve para dos cosas:
+- separar el error por grupos (por tipo de día, por tamaño de línea)
+- calcular intervalos de confianza sorteando DÍAS (ver bootstrap_dias). Se sortean días y
+  no filas porque las filas de un mismo día se parecen mucho entre sí (mismo clima, mismo
+  feriado). Si sorteáramos filas, el intervalo saldría más angosto de lo que es en realidad.
 
-Las funciones que reciben DataFrames de Spark están marcadas; el resto es pandas/numpy
-puro y se prueba fuera de Databricks.
+Las funciones marcadas con [Spark] reciben tablas de Spark. Las demás usan pandas y numpy,
+y se pueden probar fuera de Databricks.
 """
 
 import numpy as np
@@ -21,15 +28,15 @@ ESTADISTICOS = ["n", "s_err", "s_abs", "s_cuad", "s_y", "s_y2"]
 
 
 # ---------------------------------------------------------------------------
-# Spark: una sola pasada por los datos
+# Spark: recorre los datos una sola vez
 # ---------------------------------------------------------------------------
 def estadisticos_por_dia(df, col_y, predicciones, grupos=()):
-    """[Spark] Sumas por día (y grupo) para varias predicciones a la vez.
+    """[Spark] Calcula las sumas por día (y por grupo) para varias predicciones a la vez.
 
-    predicciones: {nombre_modelo: nombre_de_columna_con_la_predicción}.
-    Devuelve un DataFrame de pandas en formato largo:
+    predicciones: {nombre_del_modelo: columna_con_su_prediccion}.
+    Devuelve una tabla de pandas con estas columnas:
         modelo, fecha, *grupos, n, s_err, s_abs, s_cuad, s_y, s_y2
-    con error = predicción - real (positivo = el modelo se pasó).
+    El error es predicción menos real. Si es positivo, el modelo predijo de más.
     """
     from pyspark.sql import functions as F
 
@@ -43,6 +50,7 @@ def estadisticos_por_dia(df, col_y, predicciones, grupos=()):
     claves = ["fecha", *grupos]
     ancho = df.groupBy(*claves).agg(*aggs).toPandas()
 
+    # Se pasa de una columna por modelo a una fila por modelo (más cómodo para comparar)
     partes = []
     for nombre in predicciones:
         p = ancho[claves + ["n", "s_y", "s_y2"]].copy()
@@ -57,24 +65,25 @@ def estadisticos_por_dia(df, col_y, predicciones, grupos=()):
 
 
 # ---------------------------------------------------------------------------
-# pandas / numpy
+# pandas y numpy
 # ---------------------------------------------------------------------------
 def _desde_sumas(n, s_err, s_abs, s_cuad, s_y, s_y2):
-    """MAE, RMSE, R², WAPE y sesgo a partir de las sumas (escalares o arreglos)."""
+    """Calcula MAE, RMSE, R², WAPE y sesgo a partir de las sumas."""
     n = np.asarray(n, dtype=float)
+    # sst = suma de (y - media de y)^2. Es el error que tendríamos si predijéramos siempre la media.
     sst = np.asarray(s_y2, dtype=float) - np.asarray(s_y, dtype=float) ** 2 / n
     with np.errstate(divide="ignore", invalid="ignore"):
         return {
-            "mae": s_abs / n,
-            "rmse": np.sqrt(s_cuad / n),
-            "r2": 1 - s_cuad / sst,          # compara contra predecir la media del propio conjunto
-            "wape": s_abs / s_y,             # error absoluto total / pasajeros totales
-            "sesgo": s_err / n,              # error medio con signo: > 0 se pasa, < 0 se queda corto
+            "mae": s_abs / n,                # error promedio, sin signo
+            "rmse": np.sqrt(s_cuad / n),     # parecido al MAE, pero los errores grandes pesan más
+            "r2": 1 - s_cuad / sst,          # cuánto mejor que predecir siempre la media (1 = perfecto)
+            "wape": s_abs / s_y,             # error total dividido pasajeros totales
+            "sesgo": s_err / n,              # error promedio CON signo. Mayor a 0: predice de más
         }
 
 
 def metricas(est, por=()):
-    """Métricas por modelo (y por los grupos indicados) a partir de estadisticos_por_dia."""
+    """Métricas de cada modelo (y de cada grupo pedido en 'por'), a partir de las sumas por día."""
     claves = ["modelo", *por]
     g = est.groupby(claves, observed=True)[ESTADISTICOS].sum()
     m = pd.DataFrame(_desde_sumas(*(g[c] for c in ESTADISTICOS)), index=g.index)
@@ -83,9 +92,10 @@ def metricas(est, por=()):
 
 
 def agregar_mejora(tabla, referencia, por=()):
-    """Agrega 'mejora_mae' = 1 - MAE / MAE de la referencia, dentro de cada grupo.
+    """Agrega la columna 'mejora_mae' = 1 - MAE del modelo / MAE de la referencia.
 
-    0 = igual que la referencia; 0,10 = 10 % menos error; negativo = peor.
+    0 quiere decir igual que la referencia. 0,10 quiere decir 10 % menos error.
+    Si da negativo, el modelo es peor que la referencia.
     """
     claves = list(por)
     ref = tabla[tabla["modelo"] == referencia][claves + ["mae"]].rename(columns={"mae": "_mae_ref"})
@@ -98,24 +108,33 @@ def agregar_mejora(tabla, referencia, por=()):
 
 
 def bootstrap_dias(est, referencia, n_rep=1000, nivel=0.95, seed=42):
-    """Intervalos por bootstrap remuestreando DÍAS (el mismo remuestreo para todos los modelos).
+    """Intervalos de confianza del 95 % sorteando días (bootstrap).
 
-    Al usar los mismos días para todos los modelos (bootstrap pareado), el intervalo de la
-    mejora sobre la referencia es mucho más angosto que comparar dos intervalos sueltos:
-    los días difíciles son difíciles para todos.
+    Cómo funciona:
+    1. Tenemos, por ejemplo, 92 días de validación.
+    2. Sorteamos 92 días CON reposición (un día puede salir dos veces y otro ninguna).
+    3. Calculamos el MAE con esos días sorteados.
+    4. Repetimos 1000 veces. Así tenemos 1000 valores de MAE.
+    5. El intervalo va desde el valor que deja el 2,5 % más bajo hasta el que deja el 2,5 % más alto.
 
-    Devuelve, por modelo: mae, rmse y mejora_mae con su intervalo [inf, sup].
+    Si el intervalo es angosto, el resultado no depende mucho de qué días tocaron.
+
+    Se usan los MISMOS días sorteados para todos los modelos. Así, si un día es difícil,
+    es difícil para todos, y la comparación entre modelos es más justa.
+
+    Devuelve, por modelo: mae, rmse y mejora_mae, cada uno con su límite inferior y superior.
     """
     por_dia = est.groupby(["modelo", "fecha"])[ESTADISTICOS].sum().reset_index()
     dias = np.sort(por_dia["fecha"].unique())
     rng = np.random.default_rng(seed)
     muestras = rng.integers(0, len(dias), size=(n_rep, len(dias)))
-    pesos = np.stack([np.bincount(f, minlength=len(dias)) for f in muestras])   # n_rep x días
+    # pesos dice cuántas veces salió cada día en cada sorteo (una fila por sorteo)
+    pesos = np.stack([np.bincount(f, minlength=len(dias)) for f in muestras])
 
     reps = {}
     for modelo, g in por_dia.groupby("modelo"):
         g = g.set_index("fecha").reindex(dias).fillna(0.0)
-        sumas = pesos @ g[ESTADISTICOS].to_numpy()                                 # n_rep x 6
+        sumas = pesos @ g[ESTADISTICOS].to_numpy()   # sumas de cada sorteo
         reps[modelo] = _desde_sumas(*sumas.T)
 
     a = (1 - nivel) / 2

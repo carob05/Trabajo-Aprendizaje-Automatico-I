@@ -1,21 +1,23 @@
-"""Utilidades para leer los CSV crudos antes de pasarlos a Spark.
+"""Funciones para abrir los ZIP y CSV de viajes antes de pasarlos a Spark.
 
-Python puro: inspeccionan las primeras líneas del archivo para decidir
-separador y codificación, y normalizan nombres de columnas.
+Es Python común, sin Spark. Hacen tres cosas:
+- descubrir de qué mes es cada archivo mirando su nombre
+- mirar el principio de cada CSV para saber cómo está escrito (separador y codificación)
+- dejar los nombres de las columnas prolijos (sin tildes, sin espacios, en minúscula)
 """
 
 import re
 from pathlib import Path
 
-# Dos convenciones de nombre:
-#   viajes_stm_AAAA_MM.csv            (este proyecto)
-#   viajes_stm_MMAAAA__....csv        (pipeline anterior de Base de Datos III)
+# Los archivos pueden venir con dos formas de nombre:
+#   viajes_stm_AAAA_MM.csv            (la que usamos en este proyecto, ejemplo viajes_stm_2024_03)
+#   viajes_stm_MMAAAA__....csv        (la de un trabajo anterior, ejemplo viajes_stm_032024)
 PATRON_AAAA_MM = re.compile(r"viajes_stm_(20\d{2})_(0[1-9]|1[0-2])(?!\d)")
 PATRON_MMAAAA = re.compile(r"viajes_stm_(0[1-9]|1[0-2])(20\d{2})(?!\d)")
 
 
 def mes_desde_nombre(nombre):
-    """'AAAA-MM' a partir del nombre de archivo, o None si no se reconoce."""
+    """Devuelve el mes como 'AAAA-MM' leyendo el nombre del archivo. Si no lo reconoce, None."""
     m = PATRON_AAAA_MM.search(nombre)
     if m:
         return f"{m.group(1)}-{m.group(2)}"
@@ -26,10 +28,12 @@ def mes_desde_nombre(nombre):
 
 
 def detectar_formato(path, n_bytes=65536):
-    """Devuelve (separador, codificacion, encabezado) mirando el inicio del archivo.
+    """Mira el principio del archivo y devuelve (separador, codificacion, encabezado).
 
-    - Codificación: intenta UTF-8; si falla, usa ISO-8859-1 (Latin-1).
-    - Separador: el más frecuente entre ',', ';', '|' y tabulador en la primera línea.
+    - Codificación: es cómo están guardadas las letras con tilde. Primero prueba UTF-8.
+      Si da error, usa ISO-8859-1 (también llamada Latin-1).
+    - Separador: el símbolo que separa las columnas. Prueba coma, punto y coma, barra
+      vertical y tabulador, y se queda con el que más aparece en la primera línea.
     """
     with open(path, "rb") as f:
         crudo = f.read(n_bytes)
@@ -38,7 +42,8 @@ def detectar_formato(path, n_bytes=65536):
         texto = crudo.decode("utf-8")
         codificacion = "UTF-8"
     except UnicodeDecodeError as e:
-        # El corte en n_bytes puede partir un carácter de varios bytes al final
+        # Como leemos solo un pedazo del archivo, el corte puede caer en la mitad de una
+        # letra con tilde. Si el error está justo al final, no es un problema real.
         if e.start >= len(crudo) - 4:
             texto = crudo[: e.start].decode("utf-8")
             codificacion = "UTF-8"
@@ -53,10 +58,10 @@ def detectar_formato(path, n_bytes=65536):
 
 
 def normalizar_columna(nombre):
-    """'Código Parada Origen' -> 'codigo_parada_origen'.
+    """Deja prolijo el nombre de una columna. Ejemplo: 'Código Parada Origen' -> 'codigo_parada_origen'.
 
-    Delta no admite espacios ni algunos símbolos en nombres de columnas,
-    y nombres homogéneos evitan errores al unir meses distintos.
+    Las tablas de Databricks no aceptan espacios ni algunos símbolos en los nombres.
+    Además, si todos los meses usan los mismos nombres, es más fácil juntarlos.
     """
     s = str(nombre).strip().lstrip("﻿").lower()
     for a, b in {"á": "a", "é": "e", "í": "i", "ó": "o", "ú": "u", "ñ": "n"}.items():
@@ -66,7 +71,7 @@ def normalizar_columna(nombre):
 
 
 def normalizar_columnas(nombres):
-    """Normaliza una lista de columnas y resuelve repetidos con sufijo _2, _3, ..."""
+    """Hace lo mismo para una lista de columnas. Si dos quedan iguales, les agrega _2, _3, etc."""
     vistos, salida = {}, []
     for n in nombres:
         base = normalizar_columna(n)
@@ -76,14 +81,14 @@ def normalizar_columnas(nombres):
 
 
 # ---------------------------------------------------------------------------
-# Descompresión de ZIP descargados a mano
+# Abrir los ZIP que bajamos a mano
 # ---------------------------------------------------------------------------
 MESES_TEXTO = {
     "enero": 1, "febrero": 2, "marzo": 3, "abril": 4, "mayo": 5, "junio": 6,
     "julio": 7, "agosto": 8, "setiembre": 9, "septiembre": 9, "octubre": 10,
     "noviembre": 11, "diciembre": 12,
 }
-BUFFER = 16 * 1024 * 1024
+BUFFER = 16 * 1024 * 1024   # se copia el archivo de a pedazos de 16 MB para no llenar la memoria
 
 
 def _sin_tildes(s):
@@ -94,13 +99,13 @@ def _sin_tildes(s):
 
 
 def mes_desde_texto(texto):
-    """'AAAA-MM' a partir de un nombre cualquiera, o None.
+    """Devuelve el mes como 'AAAA-MM' a partir de cualquier nombre. Si no lo encuentra, None.
 
-    Reconoce, en este orden:
-      'viajes_stm_2024_01' / 'viajes_stm_012024'   (convenciones con prefijo)
-      'Viajes Enero 2024'                          (mes en palabras + año)
-      '2024-01', '2024_01', '2024.01'              (año y mes)
-      '012024', '01-2024', '01_2024'               (mes y año)
+    Prueba estas formas, en este orden:
+      'viajes_stm_2024_01' o 'viajes_stm_012024'   (con el prefijo de siempre)
+      'Viajes Enero 2024'                          (el mes escrito en palabras y el año)
+      '2024-01', '2024_01', '2024.01'              (primero el año y después el mes)
+      '012024', '01-2024', '01_2024'               (primero el mes y después el año)
     """
     t = _sin_tildes(texto)
     am = mes_desde_nombre(t)
@@ -120,10 +125,11 @@ def mes_desde_texto(texto):
 
 
 def mes_de_zip(zip_path):
-    """'AAAA-MM' de un ZIP sin descomprimirlo, o None.
+    """Devuelve el mes 'AAAA-MM' de un ZIP sin descomprimirlo. Si no lo encuentra, None.
 
-    Primero mira el nombre del ZIP; si no alcanza, lee el índice interno del ZIP
-    (operación rápida, no extrae nada) y mira los nombres de los CSV que contiene.
+    Primero mira el nombre del ZIP. Si ahí no está el mes, mira la lista de archivos
+    que hay adentro del ZIP (eso es rápido, no descomprime nada) y busca el mes en el
+    nombre del CSV.
     """
     import zipfile
 
@@ -141,7 +147,7 @@ def mes_de_zip(zip_path):
 
 
 def contenido_zip(zip_path):
-    """Lista de (nombre, MB descomprimidos) de los CSV dentro de un ZIP."""
+    """Lista de los CSV que hay adentro del ZIP, con su tamaño en MB una vez descomprimidos."""
     import zipfile
 
     with zipfile.ZipFile(zip_path) as z:
@@ -150,15 +156,16 @@ def contenido_zip(zip_path):
 
 
 def descomprimir_zip(zip_path, destino_dir, log=print):
-    """Extrae los CSV de un ZIP a destino_dir como viajes_stm_AAAA_MM.csv.
+    """Saca los CSV de un ZIP y los guarda en destino_dir con el nombre viajes_stm_AAAA_MM.csv.
 
-    - El mes se toma del nombre del ZIP; si no se reconoce, del nombre del CSV interno.
-    - Si el ZIP trae varios CSV, se agrega un sufijo __<nombre interno>.
-    - Idempotente: si el CSV ya existe con el tamaño correcto, no lo vuelve a extraer.
-    - Verifica el tamaño extraído contra el declarado en el ZIP; si no coincide,
-      borra el archivo incompleto y lanza un error.
+    - El mes se saca del nombre del ZIP. Si no está ahí, del nombre del CSV de adentro.
+    - Si el ZIP trae varios CSV, a cada uno se le agrega al final el nombre original.
+    - Si el CSV ya estaba descomprimido y tiene el tamaño correcto, no lo vuelve a sacar.
+      Así se puede correr muchas veces sin repetir trabajo.
+    - Al terminar, compara el tamaño del CSV con el que dice el ZIP. Si no coinciden,
+      el archivo quedó cortado, entonces lo borra y avisa con un error.
 
-    Devuelve (anio_mes, [rutas de CSV]).
+    Devuelve (anio_mes, [rutas de los CSV]).
     """
     import zipfile
 
@@ -205,7 +212,7 @@ def descomprimir_zip(zip_path, destino_dir, log=print):
 
 
 def agrupar_por_mes(paths):
-    """{'AAAA-MM': [paths]} a partir de los nombres de archivo (ambas convenciones)."""
+    """Junta los archivos por mes. Devuelve {'AAAA-MM': [archivos de ese mes]}."""
     grupos = {}
     for p in paths:
         am = mes_desde_nombre(Path(p).name)
