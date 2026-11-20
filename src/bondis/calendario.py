@@ -1,4 +1,4 @@
-"""Calendario de Uruguay para 2024 y 2025: feriados, Carnaval, Turismo, elecciones, fiestas y clases.
+"""Calendario de Uruguay para 2024, 2025 y 2026: feriados, Carnaval, Turismo, elecciones, fiestas y clases.
 
 Las fechas son las del día en que de verdad se festejó cada feriado. Algunos feriados
 se mueven por ley (Ley 16.805). Si caen martes o miércoles, pasan al lunes anterior.
@@ -14,6 +14,13 @@ De dónde sacamos las fechas de clases de ANEP:
 - Montevideo Portal, "Vacaciones de julio 2025" (una semana primaria, dos semanas media).
 - Bloomberg Línea, "Vacaciones de primavera 2025" (22 a 24 de setiembre, y fin de clases).
 - Montevideo Portal, "Fin de cursos 2025" (fin de clases por nivel).
+- El Observador, 9 de febrero de 2026, "ANEP estableció fechas de clases en escuelas, liceos y UTU"
+  (inicio 2026 y vacaciones de julio, que en 2026 son iguales para primaria y media).
+- El Observador, 16 de noviembre de 2026, "Cuándo terminan las clases en Uruguay 2026"
+  (vacaciones de primavera y fin de clases: primaria 18/12, liceos y la mayoría de UTU 27/11).
+
+Feriados 2026: Montevideo Portal, "Feriados 2026: estos son los laborables y no laborables".
+En 2026 ningún feriado se movió de día. Reyes cayó martes, pero ese feriado no se traslada.
 
 Para simplificar: en liceos y UTU cada plan termina en una fecha distinta (entre fines
 de noviembre y principios de diciembre). Usamos la fecha en que termina la mayoría.
@@ -37,6 +44,11 @@ NO_LABORABLES = {
     date(2025, 7, 18): "Jura de la Constitución",
     date(2025, 8, 25): "Declaratoria de la Independencia",
     date(2025, 12, 25): "Navidad",
+    date(2026, 1, 1): "Año Nuevo",
+    date(2026, 5, 1): "Día de los Trabajadores",
+    date(2026, 7, 18): "Jura de la Constitución",
+    date(2026, 8, 25): "Declaratoria de la Independencia",
+    date(2026, 12, 25): "Navidad",
 }
 
 # Feriados laborables: el comercio puede abrir. Va la fecha en que se festejaron de verdad.
@@ -53,14 +65,22 @@ LABORABLES = {
     date(2025, 6, 19): "Natalicio de Artigas",
     date(2025, 10, 12): "Día de la Diversidad Cultural",
     date(2025, 11, 2): "Día de los Difuntos",
+    date(2026, 1, 6): "Día de Reyes",
+    date(2026, 4, 19): "Desembarco de los 33 Orientales",
+    date(2026, 5, 18): "Batalla de Las Piedras",
+    date(2026, 6, 19): "Natalicio de Artigas",
+    date(2026, 10, 12): "Día de la Diversidad Cultural",
+    date(2026, 11, 2): "Día de los Difuntos",
 }
 
-CARNAVAL = [date(2024, 2, 12), date(2024, 2, 13), date(2025, 3, 3), date(2025, 3, 4)]
+CARNAVAL = [date(2024, 2, 12), date(2024, 2, 13), date(2025, 3, 3), date(2025, 3, 4),
+            date(2026, 2, 16), date(2026, 2, 17)]
 
 # Semana de Turismo completa, de lunes a domingo.
-TURISMO = [(date(2024, 3, 25), date(2024, 3, 31)), (date(2025, 4, 14), date(2025, 4, 20))]
+TURISMO = [(date(2024, 3, 25), date(2024, 3, 31)), (date(2025, 4, 14), date(2025, 4, 20)),
+           (date(2026, 3, 30), date(2026, 4, 5))]
 
-# Elecciones nacionales y departamentales (siempre caen domingo).
+# Elecciones nacionales y departamentales (siempre caen domingo). En 2026 no hubo.
 ELECCIONES = {
     date(2024, 6, 30): "Elecciones internas",
     date(2024, 10, 27): "Elecciones nacionales",
@@ -69,8 +89,9 @@ ELECCIONES = {
 }
 
 # Fiestas de fin de año: del 24 al 31 de diciembre. Solo el 25 es feriado, pero en toda esa
-# semana la gente viaja distinto que de costumbre. En validación (notebook 05) esos días
-# fueron menos del 7 % de los días, pero juntaron cerca de la cuarta parte del error.
+# semana la gente viaja distinto que de costumbre. En una primera prueba de las reglas
+# simples (validando con octubre a diciembre de 2024) esos días fueron menos del 7 % de
+# los días, pero juntaron cerca de la cuarta parte del error.
 # Como las fechas se saben de antemano, se pueden usar sin problema. Se eligieron por
 # fecha, sin mirar los datos de test.
 FIESTAS_FIN_DE_ANIO = (12, 24, 31)   # (mes, primer día, último día)
@@ -85,7 +106,10 @@ def es_semana_fiestas(d):
 
 # Días en que casi no hay ómnibus (se sabe de antemano).
 # Lo revisamos en los datos: esos días todo el sistema lleva entre 116 y 150 pasajeros.
-SIN_SERVICIO = [date(2024, 1, 1), date(2024, 5, 1), date(2025, 1, 1), date(2025, 5, 1)]
+# Los de 2026 los pusimos porque pasa todos los años, pero hay que confirmarlo en la tabla
+# de "Días raros" del notebook 03 cuando estén cargados los datos.
+SIN_SERVICIO = [date(2024, 1, 1), date(2024, 5, 1), date(2025, 1, 1), date(2025, 5, 1),
+                date(2026, 1, 1), date(2026, 5, 1)]
 
 # Calendario de clases de ANEP. Para cada año: cuándo empiezan y terminan las clases (periodo)
 # y las vacaciones del medio (recesos), cada una con su día de inicio y de fin.
@@ -97,6 +121,9 @@ CLASES = {
         2025: {"periodo": (date(2025, 3, 5), date(2025, 12, 12)),
                "recesos": [(date(2025, 6, 30), date(2025, 7, 4)),
                            (date(2025, 9, 22), date(2025, 9, 24))]},
+        2026: {"periodo": (date(2026, 3, 2), date(2026, 12, 18)),
+               "recesos": [(date(2026, 6, 29), date(2026, 7, 3)),
+                           (date(2026, 9, 21), date(2026, 9, 25))]},
     },
     "media": {   # liceos y UTU
         2024: {"periodo": (date(2024, 3, 4), date(2024, 11, 30)),
@@ -105,6 +132,11 @@ CLASES = {
         2025: {"periodo": (date(2025, 3, 5), date(2025, 11, 28)),
                "recesos": [(date(2025, 6, 30), date(2025, 7, 11)),
                            (date(2025, 9, 22), date(2025, 9, 24))]},
+        # En 2026 los liceos arrancaron escalonado (2 al 4 de marzo). Ponemos el 3, que es
+        # cuando entra la mayoría. Las vacaciones de julio fueron de una sola semana, igual que primaria.
+        2026: {"periodo": (date(2026, 3, 3), date(2026, 11, 27)),
+               "recesos": [(date(2026, 6, 29), date(2026, 7, 3)),
+                           (date(2026, 9, 21), date(2026, 9, 25))]},
     },
 }
 

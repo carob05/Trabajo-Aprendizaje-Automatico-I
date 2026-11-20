@@ -1,17 +1,14 @@
-"""Modelos del notebook 06: regresión lineal (Ridge) y árboles (boosting).
+"""Modelo del notebook 06: regresión lineal Ridge.
 
 Todo se hace con pandas y scikit-learn. Train y val entran en la memoria
-(unas 900 mil y 300 mil filas), así que no hace falta Spark para entrenar.
+(más o menos un millón de filas cada uno), así que no hace falta Spark para entrenar.
 Para medir el error se usan las mismas funciones de metricas.py que en el notebook 05.
 
 Las decisiones salen de lo que vimos en el análisis de datos (notebook 04):
 - Los pasajeros tienen muchas horas con pocos y pocas horas con muchísimos. Por eso se
   prueba predecir log(1 + pasajeros), que achica los valores grandes.
-- La mediana de las últimas 4 semanas ya acierta casi siempre. Por eso un modelo puede
-  aprender solo cuánto CORREGIR esa mediana (modelo "residual").
 - La forma del día cambia según el tipo de día (un hábil tiene dos picos, un domingo no).
-  El modelo lineal necesita que le demos combinaciones hora x tipo de día. Los árboles
-  las encuentran solos.
+  Una regresión lineal no lo ve sola, hay que darle las combinaciones hora x tipo de día.
 - Los rezagos semanales, el promedio y la mediana dicen casi lo mismo (correlación entre
   0,95 y 1,00). Si se ponen todos juntos en una regresión lineal, los coeficientes quedan
   inestables. Por eso el modelo lineal usa solo cuatro: la mediana, el rezago de 1 día,
@@ -22,9 +19,7 @@ import time
 
 import numpy as np
 import pandas as pd
-from sklearn.base import BaseEstimator, RegressorMixin, TransformerMixin, clone
 from sklearn.compose import ColumnTransformer, TransformedTargetRegressor
-from sklearn.ensemble import HistGradientBoostingRegressor
 from sklearn.linear_model import Ridge
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
@@ -82,8 +77,8 @@ def columnas_a_leer(columnas_gold):
 def categorias_desde(train):
     """Lista de valores posibles de linea, tipo_dia y tipo_linea, sacada SOLO de train.
 
-    Si en val aparece una línea que no estaba en train, queda vacía. Los árboles la tratan
-    como "desconocida" y el modelo lineal no le da ningún peso.
+    Si en val aparece una línea que no estaba en train, queda vacía. La regresión no usa
+    la línea, así que no le afecta.
     """
     return {c: sorted(train[c].dropna().astype(str).unique()) for c in CATEGORICAS}
 
@@ -147,46 +142,6 @@ def _exp_recortada(z):
     return np.clip(np.expm1(z), 0, None)
 
 
-class SelectorColumnas(BaseEstimator, TransformerMixin):
-    """Paso de un pipeline que se queda solo con algunas columnas (sin cambiarles el tipo)."""
-
-    def __init__(self, columnas):
-        self.columnas = columnas
-
-    def fit(self, X, y=None):
-        return self
-
-    def transform(self, X):
-        return X[list(self.columnas)]
-
-
-class SobreReferencia(BaseEstimator, RegressorMixin):
-    """Modelo que aprende cuánto corregir la mediana de 4 semanas.
-
-    En vez de aprender "cuántos pasajeros hay", aprende "cuántos pasajeros de más o de
-    menos hay respecto de la mediana" (eso se llama residual).
-    Predicción final = mediana + corrección. Si da negativo, se pone 0.
-    """
-
-    def __init__(self, estimador, referencia=REFERENCIA):
-        self.estimador = estimador
-        self.referencia = referencia
-
-    def fit(self, X, y):
-        residual = np.asarray(y, dtype=float) - X[self.referencia].to_numpy(float)
-        self.estimador_ = clone(self.estimador).fit(X, residual)
-        return self
-
-    def predict(self, X):
-        return np.clip(X[self.referencia].to_numpy(float) + self.estimador_.predict(X), 0, None)
-
-
-def columnas_arbol(columnas):
-    """Columnas que usan los modelos de árboles."""
-    base = ["hora", "dia_semana", "linea", "tipo_dia", "tipo_linea", *REZAGOS, *CLIMA]
-    return base + [c for c in BANDERAS if c in columnas]
-
-
 def _lineal(columnas, alfa, interacciones):
     """Regresión Ridge que predice log(1 + pasajeros).
 
@@ -213,48 +168,14 @@ def _lineal(columnas, alfa, interacciones):
                                       check_inverse=False)
 
 
-def _arbol(columnas, familia, hojas, iteraciones, tasa, semilla):
-    """Boosting de árboles (HistGradientBoosting de scikit-learn).
-
-    Boosting quiere decir que se entrenan muchos árboles chicos, uno después del otro,
-    y cada árbol nuevo trata de corregir los errores que dejaron los anteriores.
-
-    Tres versiones (familias):
-    poisson:  predice los pasajeros directo, con un error pensado para conteos (0, 1, 2, ...).
-    log:      predice log(1 + pasajeros), igual que el modelo lineal.
-    residual: predice la corrección sobre la mediana de 4 semanas, con error absoluto.
-    """
-    cols = columnas_arbol(columnas)
-
-    def hgb(loss):
-        return Pipeline([
-            ("sel", SelectorColumnas(cols)),
-            ("hgb", HistGradientBoostingRegressor(
-                loss=loss, categorical_features="from_dtype", max_leaf_nodes=hojas,
-                min_samples_leaf=100, learning_rate=tasa, max_iter=iteraciones,
-                early_stopping=False, random_state=semilla)),
-        ])
-
-    if familia == "poisson":
-        return hgb("poisson")
-    if familia == "log":
-        return TransformedTargetRegressor(regressor=hgb("squared_error"), func=np.log1p,
-                                          inverse_func=_exp_recortada, check_inverse=False)
-    if familia == "residual":
-        return SobreReferencia(hgb("absolute_error"))
-    raise ValueError(f"Familia de árbol desconocida: {familia}")
-
-
 def crear_modelo(columnas, familia, **params):
-    """Crea un modelo nuevo, todavía sin entrenar.
+    """Crea una regresión nueva, todavía sin entrenar.
 
-    familia 'lineal':  necesita alfa e interacciones
-    familia 'poisson', 'log' o 'residual':  necesita hojas, y opcionalmente iteraciones=200, tasa=0.1, semilla=42
+    La única familia es 'lineal' (Ridge). Necesita alfa e interacciones.
     """
-    if familia == "lineal":
-        return _lineal(columnas, params["alfa"], params["interacciones"])
-    return _arbol(columnas, familia, params["hojas"], params.get("iteraciones", 200),
-                  params.get("tasa", 0.1), params.get("semilla", 42))
+    if familia != "lineal":
+        raise ValueError(f"Familia de modelo desconocida: {familia}. Solo hay 'lineal'.")
+    return _lineal(columnas, params["alfa"], params["interacciones"])
 
 
 def ajustar_y_predecir(modelo, train, val):
@@ -285,40 +206,6 @@ def error_train_val(ajustados, nombres, train, val, n_train=200_000, semilla=42)
             "mae_val": mae(val[OBJETIVO], np.clip(m.predict(val), 0, None)),
         })
     return pd.DataFrame(filas)
-
-
-def _partes_boosting(modelo):
-    """Separa un modelo de árboles ya entrenado en dos partes: los árboles y el paso final.
-
-    El paso final pasa lo que dan los árboles a pasajeros. Según la familia, no hace nada,
-    deshace el log o le suma la mediana de 4 semanas.
-    """
-    if isinstance(modelo, Pipeline):
-        return modelo, lambda X, z: np.clip(z, 0, None)
-    if isinstance(modelo, TransformedTargetRegressor):
-        return modelo.regressor_, lambda X, z: _exp_recortada(z)
-    if isinstance(modelo, SobreReferencia):
-        ref = modelo.referencia
-        return modelo.estimador_, lambda X, z: np.clip(X[ref].to_numpy(float) + z, 0, None)
-    raise ValueError("Solo se puede seguir el entrenamiento de los modelos de boosting")
-
-
-def curva_por_iteraciones(modelo, train, val, n_train=100_000, semilla=42):
-    """MAE en train y en val después de cada árbol.
-
-    Devuelve iteracion, mae_train y mae_val. Usa staged_predict, que va sumando los árboles
-    de a uno, así que no hay que volver a entrenar.
-    """
-    pipe, final = _partes_boosting(modelo)
-    sel, hgb = pipe.named_steps["sel"], pipe.named_steps["hgb"]
-    sub = train.sample(n=min(n_train, len(train)), random_state=semilla)
-    curvas = {}
-    for nombre, df in (("train", sub), ("val", val)):
-        X, y = sel.transform(df), df[OBJETIVO].to_numpy(float)
-        curvas[nombre] = [mae(y, final(df, z)) for z in hgb.staged_predict(X)]
-    n = len(curvas["train"])
-    return pd.DataFrame({"iteracion": np.arange(1, n + 1),
-                         "mae_train": curvas["train"], "mae_val": curvas["val"]})
 
 
 def curva_aprendizaje(crear, train, val, fracciones=(0.1, 0.25, 0.5, 0.75, 1.0), semilla=42):

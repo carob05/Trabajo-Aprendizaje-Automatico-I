@@ -1,6 +1,6 @@
 # Predicción de pasajeros de ómnibus del STM
 
-Queremos predecir **cuántas personas van a subir a cada línea de ómnibus de Montevideo, en cada hora del día siguiente**. Usamos los datos abiertos de viajes del STM de 2024 y 2025, el calendario (feriados, clases, elecciones) y el pronóstico del clima.
+Queremos predecir **cuántas personas van a subir a cada línea de ómnibus de Montevideo, en cada hora del día siguiente**. Usamos los datos abiertos de viajes del STM de 2024, 2025 y 2026, el calendario (feriados, clases, elecciones) y el pronóstico del clima.
 
 ## En qué orden se corren los notebooks
 
@@ -9,26 +9,28 @@ Queremos predecir **cuántas personas van a subir a cada línea de ómnibus de M
 | `00_setup` | Prepara Databricks y le dice a Python dónde está nuestro código. Los demás lo llaman solos | Catálogo, esquema y carpetas |
 | `01_ingesta_bronze` | Abre los ZIP de viajes y copia los datos tal cual vienen | `viajes_bronze` |
 | `02_limpieza_silver` | Limpia los datos: tipos correctos, saca filas malas y repetidas | `viajes_silver`, `calidad_silver` |
-| `03_features_gold` | Suma pasajeros por línea, día y hora, y agrega calendario, clima y rezagos | `demanda_gold` |
+| `03_features_gold` | Suma pasajeros por línea, día y hora, y agrega calendario, clima y rezagos. Marca cada fila como train, val o test | `demanda_gold` |
 | `04_eda` | Mira los datos de train para entenderlos antes de modelar | Nada (solo gráficos y conclusiones) |
 | `05_baseline` | Prueba reglas simples para saber qué error hay que superar | `resultados_modelos` (etapa baseline) |
-| `06_modelo` | Entrena modelos (Ridge y árboles) y los compara en validación | `resultados_modelos` (etapa modelo) |
-| `07_evaluacion` | Prueba el modelo elegido en test (todavía falta hacerlo) | `resultados_modelos` (etapa test) |
+| `06_modelo` | Regresión Ridge: aprende con 2024, se elige con 2025 y se prueba una vez en 2026 | `resultados_modelos` (etapas modelo y test) |
 
 ## Cómo se dividen los datos
 
+Un año entero para cada cosa (las fechas están en `config.py`):
+
 | Conjunto | Fechas | Para qué |
 |---|---|---|
-| train | enero a setiembre de 2024 | El modelo aprende |
-| val | octubre a diciembre de 2024 | Elegimos el mejor modelo |
-| test | todo 2025 | Lo probamos una sola vez, al final |
+| train | todo 2024 | El modelo aprende |
+| val | todo 2025 | Elegimos el mejor modelo |
+| test | 2026, hasta donde haya datos | Lo probamos una sola vez, al final |
 
 ## Cómo subir los datos
 
 Databricks no se puede conectar a la página de la Intendencia ni a Open-Meteo, así que los archivos se bajan desde la computadora y se suben a mano:
 
 1. **Viajes.** Bajar el ZIP de cada mes del conjunto "Viajes realizados en los ómnibus del STM" del portal de datos abiertos de la Intendencia. Subirlo en Databricks a `Catalog > bondis_stm > datos > raw > viajes_zip`. Después se puede borrar la copia de la computadora.
-2. **Clima.** Abrir en el navegador los dos enlaces que están al principio de `src/bondis/clima.py`. Guardar los CSV con los nombres que dice ahí y subirlos a `raw/clima`.
+2. **Clima.** Abrir en el navegador los enlaces que están al principio de `src/bondis/clima.py` (hay uno para 2024 y 2025 y otro para 2026, de pronóstico y de observado). Guardar los CSV con los nombres que dice ahí y subirlos a `raw/clima`. El notebook 03 lee todos los que empiecen con `clima_pronostico_` y `clima_observado_` y los junta.
+3. **Después de subir 2026.** Correr 01, 02 y 03 de nuevo. Bronze y silver solo procesan los meses nuevos. Gold se arma entera otra vez.
 
 ## Dónde está cada cosa
 

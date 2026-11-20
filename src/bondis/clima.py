@@ -12,11 +12,24 @@ Usamos dos archivos que están en raw/clima:
 
 Cómo bajarlos (desde el navegador, porque Databricks Free Edition no llega a Open-Meteo):
 
-Pronóstico -> raw/clima/clima_pronostico_2024_2025.csv
+Pronóstico 2024 y 2025 -> raw/clima/clima_pronostico_2024_2025.csv
 https://previous-runs-api.open-meteo.com/v1/forecast?latitude=-34.9011&longitude=-56.1645&hourly=temperature_2m_previous_day1,precipitation_previous_day1&start_date=2024-01-01&end_date=2025-12-31&timezone=America%2FMontevideo&models=gfs_global,ecmwf_ifs025,icon_global,gem_global&format=csv
 
-Observado -> raw/clima/clima_observado_2024_2025.csv
+Observado 2024 y 2025 -> raw/clima/clima_observado_2024_2025.csv
 https://archive-api.open-meteo.com/v1/archive?latitude=-34.9011&longitude=-56.1645&start_date=2024-01-01&end_date=2025-12-31&hourly=temperature_2m,precipitation&timezone=America%2FMontevideo&format=csv
+
+Pronóstico 2026 -> raw/clima/clima_pronostico_2026.csv
+https://previous-runs-api.open-meteo.com/v1/forecast?latitude=-34.9011&longitude=-56.1645&hourly=temperature_2m_previous_day1,precipitation_previous_day1&start_date=2026-01-01&end_date=2026-12-31&timezone=America%2FMontevideo&models=gfs_global,ecmwf_ifs025,icon_global,gem_global&format=csv
+
+Observado 2026 -> raw/clima/clima_observado_2026.csv
+https://archive-api.open-meteo.com/v1/archive?latitude=-34.9011&longitude=-56.1645&start_date=2026-01-01&end_date=2026-12-31&hourly=temperature_2m,precipitation&timezone=America%2FMontevideo&format=csv
+
+Ojo con 2026: si el año todavía no terminó, Open-Meteo puede dar error con end_date en
+el futuro. En ese caso hay que cambiar end_date por el último día que haya datos de viajes
+(por ejemplo 2026-10-31). El observado además viene con unos días de atraso.
+
+Se leen todos los archivos que empiecen con clima_pronostico_ (y clima_observado_) y se
+juntan. Si dos archivos tienen la misma hora, queda la del último en orden alfabético.
 
 Los pronósticos guardados empiezan el 19/01/2024 (GFS, ICON y GEM) y el 03/02/2024 (ECMWF).
 Antes de esa fecha el pronóstico queda vacío. No es un problema, porque esos días igual
@@ -26,6 +39,7 @@ Los CSV de Open-Meteo traen 3 líneas de información antes de la tabla de datos
 Por eso se leen con pandas salteando esas líneas (son archivos chicos).
 """
 
+import glob
 import re
 
 import pandas as pd
@@ -41,6 +55,31 @@ def leer_open_meteo(ruta):
     return df
 
 
+def _lista_de_archivos(rutas):
+    """Pasa lo que nos den (una ruta, un patrón con * o una lista) a una lista de archivos."""
+    if isinstance(rutas, (str, bytes)) or hasattr(rutas, "__fspath__"):
+        rutas = [rutas]
+    archivos = []
+    for r in rutas:
+        r = str(r)
+        archivos += sorted(glob.glob(r)) if "*" in r else [r]
+    if not archivos:
+        raise FileNotFoundError(f"No hay archivos de clima que coincidan con {rutas}")
+    return archivos
+
+
+def leer_varios(rutas):
+    """Lee uno o varios CSV de Open-Meteo y los junta en una sola tabla, sin horas repetidas.
+
+    Sirve para tener un archivo con 2024 y 2025 y otro aparte con 2026. Si los archivos
+    tienen columnas distintas (por ejemplo, un servicio del tiempo que falta en un año),
+    donde no hay dato queda vacío.
+    """
+    partes = [leer_open_meteo(r) for r in _lista_de_archivos(rutas)]
+    df = pd.concat(partes, ignore_index=True)
+    return df.drop_duplicates("time", keep="last").sort_values("time").reset_index(drop=True)
+
+
 def _promedio(df, prefijo):
     cols = [c for c in df.columns if c.startswith(prefijo)]
     if not cols:
@@ -49,8 +88,11 @@ def _promedio(df, prefijo):
 
 
 def tabla_clima_pandas(ruta_pronostico, ruta_observado=None):
-    """Una fila por día y hora con el clima pronosticado (y el observado, si se pasa el archivo)."""
-    p = leer_open_meteo(ruta_pronostico)
+    """Una fila por día y hora con el clima pronosticado (y el observado, si se pasa el archivo).
+
+    Cada ruta puede ser un archivo, un patrón con * (como en config.py) o una lista de archivos.
+    """
+    p = leer_varios(ruta_pronostico)
     temp, cols_t = _promedio(p, "temperature_2m_previous_day1")
     lluvia, cols_p = _promedio(p, "precipitation_previous_day1")
 
@@ -70,7 +112,7 @@ def tabla_clima_pandas(ruta_pronostico, ruta_observado=None):
     out["llueve_pron"] = out["llueve_pron"].where(~sin_datos, None)
 
     if ruta_observado:
-        o = leer_open_meteo(ruta_observado)
+        o = leer_varios(ruta_observado)
         obs = pd.DataFrame({
             "fecha": o["time"].dt.date,
             "hora": o["time"].dt.hour.astype("int32"),

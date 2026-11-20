@@ -23,9 +23,12 @@ RAW_CLIMA = f"{RAW_PATH}/clima"
 RAW_CALENDARIO = f"{RAW_PATH}/calendario"
 RAW_PAROS = f"{RAW_PATH}/paros"
 
-# Archivos de clima bajados de la página Open-Meteo (ver src/bondis/clima.py)
-CLIMA_PRONOSTICO = f"{RAW_CLIMA}/clima_pronostico_2024_2025.csv"
-CLIMA_OBSERVADO = f"{RAW_CLIMA}/clima_observado_2024_2025.csv"
+# Archivos de clima bajados de la página Open-Meteo (ver src/bondis/clima.py).
+# El asterisco quiere decir "todos los que empiecen así". Por ejemplo, agarra a la vez
+# clima_pronostico_2024_2025.csv y clima_pronostico_2026.csv, así no hay que volver a
+# bajar los años que ya teníamos.
+CLIMA_PRONOSTICO = f"{RAW_CLIMA}/clima_pronostico_*.csv"
+CLIMA_OBSERVADO = f"{RAW_CLIMA}/clima_observado_*.csv"
 
 # De dónde salen los viajes: el conjunto de datos "Viajes realizados en los ómnibus
 # del STM" del portal de datos abiertos de la Intendencia. Databricks no se puede
@@ -45,7 +48,7 @@ TABLE_CALIDAD_SILVER = f"{CATALOG}.{SCHEMA}.calidad_silver"   # cuántas filas s
 TABLE_LINEAS = f"{CATALOG}.{SCHEMA}.lineas"                   # qué líneas entran al modelo y cuáles no
 TABLE_CALENDARIO = f"{CATALOG}.{SCHEMA}.calendario"
 TABLE_CLIMA = f"{CATALOG}.{SCHEMA}.clima"
-TABLE_RESULTADOS = f"{CATALOG}.{SCHEMA}.resultados_modelos"   # errores de cada modelo (notebooks 05 a 07)
+TABLE_RESULTADOS = f"{CATALOG}.{SCHEMA}.resultados_modelos"   # errores de cada modelo (notebooks 05 y 06)
 
 # Una línea entra al modelo solo si tuvo servicio al menos esta cantidad de días en CADA año
 MIN_DIAS_LINEA = 100
@@ -57,17 +60,22 @@ TIMEZONE = "America/Montevideo"
 # Fechas de los datos y cómo se dividen
 # Cada conjunto va desde una fecha de inicio (incluida) hasta una fecha de fin (NO incluida).
 # Por eso siempre se filtra así:  fecha >= inicio  y  fecha < fin.
-# Ejemplo: train va del 2024-01-01 al 2024-10-01, o sea, hasta el 30 de setiembre.
+# Ejemplo: train va del 2024-01-01 al 2025-01-01, o sea, hasta el 31 de diciembre de 2024.
 # ---------------------------------------------------------------------------
 FECHA_INICIO = "2024-01-01"
-FECHA_INICIO_VAL = "2024-10-01"     # train: enero a setiembre de 2024
-FECHA_INICIO_TEST = "2025-01-01"    # val:   octubre a diciembre de 2024
-FECHA_FIN = "2026-01-01"            # test:  todo 2025
+FECHA_FIN = "2027-01-01"            # los datos llegan hasta 2026 (lo que haya de 2026)
 
-# 2026 queda afuera por ahora, porque calendario.py y el clima solo tienen 2024 y 2025.
-# Para agregarlo hay que: completar calendario.py, bajar el clima de 2026, poner
-# FECHA_FIN = "2027-01-01", agregar "verif": ("2026-01-01", FECHA_FIN) a PARTICIONES
-# y volver a correr 03_features_gold. Bronze y silver no cambian.
+# Si 2026 todavía no está completo no pasa nada. Gold se arma hasta el último día que
+# haya en silver, y el resto del año simplemente no aparece.
+
+# Un año entero para cada cosa:
+#   train: todo 2024    val: todo 2025    test: 2026
+# La ventaja es que el modelo ve todos los meses del año (también diciembre, con las
+# fiestas y el fin de clases) antes de que lo probemos, y que val y test tienen las
+# mismas épocas del año.
+FECHA_INICIO_VAL = "2025-01-01"     # train: todo 2024
+FECHA_INICIO_TEST = "2026-01-01"    # val:   todo 2025
+                                    # test:  2026, hasta FECHA_FIN
 
 PARTICIONES = {
     "train": (FECHA_INICIO, FECHA_INICIO_VAL),
@@ -76,8 +84,7 @@ PARTICIONES = {
 }
 
 # Entrenamiento final: cuando ya elegimos el mejor modelo usando val, lo volvemos a
-# entrenar con train + val juntos (todo 2024) y recién ahí lo probamos en test.
-# Así el modelo final también aprende cómo son los meses de octubre a diciembre.
+# entrenar con train + val juntos (2024 y 2025) y recién ahí lo probamos en test.
 PARTICION_TRAIN_FINAL = (FECHA_INICIO, FECHA_INICIO_TEST)
 
 # ---------------------------------------------------------------------------

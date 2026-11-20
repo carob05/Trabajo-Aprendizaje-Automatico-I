@@ -1,4 +1,4 @@
-"""Cómo medimos el error de los modelos. Se usa igual para todos (reglas simples, lineal, árboles).
+"""Cómo medimos el error de los modelos. Se usa igual para todos (reglas simples y regresión).
 
 Truco para que sea rápido: en vez de recorrer las millones de filas cada vez que queremos
 una métrica, primero calculamos unas pocas SUMAS POR DÍA:
@@ -111,8 +111,8 @@ def bootstrap_dias(est, referencia, n_rep=1000, nivel=0.95, seed=42):
     """Intervalos de confianza del 95 % sorteando días (bootstrap).
 
     Cómo funciona:
-    1. Tenemos, por ejemplo, 92 días de validación.
-    2. Sorteamos 92 días CON reposición (un día puede salir dos veces y otro ninguna).
+    1. Tenemos, por ejemplo, 365 días de validación.
+    2. Sorteamos 365 días CON reposición (un día puede salir dos veces y otro ninguna).
     3. Calculamos el MAE con esos días sorteados.
     4. Repetimos 1000 veces. Así tenemos 1000 valores de MAE.
     5. El intervalo va desde el valor que deja el 2,5 % más bajo hasta el que deja el 2,5 % más alto.

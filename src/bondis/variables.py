@@ -1,4 +1,4 @@
-"""Variables extra que usan los notebooks de modelos (05 a 07).
+"""Variables extra que usan los notebooks de modelos (05 y 06).
 
 No se guardan en la tabla gold porque son decisiones nuestras de cómo modelar.
 Si las queremos cambiar, no hace falta volver a armar gold entera.
