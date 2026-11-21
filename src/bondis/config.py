@@ -47,7 +47,8 @@ TABLE_CALENDARIO = f"{CATALOG}.{SCHEMA}.calendario"
 TABLE_CLIMA = f"{CATALOG}.{SCHEMA}.clima"
 TABLE_RESULTADOS = f"{CATALOG}.{SCHEMA}.resultados_modelos"   # errores de cada modelo (notebooks 05 y 06)
 
-# Una línea entra al modelo solo si tuvo servicio al menos esta cantidad de días en CADA año
+# Una línea entra al modelo solo si tuvo servicio al menos esta cantidad de días en CADA
+# año de train y val (2024 y 2025). El año de test no se mira (ver notebook 03, paso 2).
 MIN_DIAS_LINEA = 100
 
 # Zona horaria de las fechas del STM (Uruguay no tiene horario de verano desde 2015)
