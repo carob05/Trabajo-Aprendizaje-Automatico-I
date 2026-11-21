@@ -24,11 +24,8 @@ RAW_CALENDARIO = f"{RAW_PATH}/calendario"
 RAW_PAROS = f"{RAW_PATH}/paros"
 
 # Archivos de clima bajados de la página Open-Meteo (ver src/bondis/clima.py).
-# El asterisco quiere decir "todos los que empiecen así". Por ejemplo, agarra a la vez
-# clima_pronostico_2024_2025.csv y clima_pronostico_2026.csv, así no hay que volver a
-# bajar los años que ya teníamos.
-CLIMA_PRONOSTICO = f"{RAW_CLIMA}/clima_pronostico_*.csv"
-CLIMA_OBSERVADO = f"{RAW_CLIMA}/clima_observado_*.csv"
+# Se suben a RAW_CLIMA con cualquier nombre. El notebook 03 mira qué tiene cada archivo
+# para saber si es pronóstico u observado.
 
 # De dónde salen los viajes: el conjunto de datos "Viajes realizados en los ómnibus
 # del STM" del portal de datos abiertos de la Intendencia. Databricks no se puede

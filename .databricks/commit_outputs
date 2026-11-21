@@ -16,3 +16,8 @@
  
 !notebooks/05_baseline.ipynb
 notebooks/06_modelo.ipynb
+notebooks/03_features_gold.ipynb
+notebooks/02_limpieza_silver.ipynb
+notebooks/01_ingesta_bronze.ipynb
+notebooks/00_setup.ipynb
+notebooks/04_eda.ipynb

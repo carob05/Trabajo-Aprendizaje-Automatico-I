@@ -29,7 +29,7 @@ Un año entero para cada cosa (las fechas están en `config.py`):
 Databricks no se puede conectar a la página de la Intendencia ni a Open-Meteo, así que los archivos se bajan desde la computadora y se suben a mano:
 
 1. **Viajes.** Bajar el ZIP de cada mes del conjunto "Viajes realizados en los ómnibus del STM" del portal de datos abiertos de la Intendencia. Subirlo en Databricks a `Catalog > bondis_stm > datos > raw > viajes_zip`. Después se puede borrar la copia de la computadora.
-2. **Clima.** Abrir en el navegador los enlaces que están al principio de `src/bondis/clima.py` (hay uno para 2024 y 2025 y otro para 2026, de pronóstico y de observado). Guardar los CSV con los nombres que dice ahí y subirlos a `raw/clima`. El notebook 03 lee todos los que empiecen con `clima_pronostico_` y `clima_observado_` y los junta.
+2. **Clima.** Abrir en el navegador los enlaces que están al principio de `src/bondis/clima.py` (hay uno para 2024 y 2025 y otro para 2026, de pronóstico y de observado). Guardar los CSV con cualquier nombre y subirlos a `raw/clima`. El notebook 03 lee todos los archivos de esa carpeta, reconoce cuál es pronóstico y cuál observado por las columnas que trae, y los junta.
 3. **Después de subir 2026.** Correr 01, 02 y 03 de nuevo. Bronze y silver solo procesan los meses nuevos. Gold se arma entera otra vez.
 
 ## Dónde está cada cosa
