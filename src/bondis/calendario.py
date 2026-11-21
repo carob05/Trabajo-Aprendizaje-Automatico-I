@@ -2,7 +2,9 @@
 
 Las fechas son las del día en que de verdad se festejó cada feriado. Algunos feriados
 se mueven por ley (Ley 16.805). Si caen martes o miércoles, pasan al lunes anterior.
-Si caen jueves o viernes, pasan al lunes siguiente.
+Si caen jueves o viernes, pasan al lunes siguiente. Los que se mueven son el 19 de abril,
+el 18 de mayo y el 12 de octubre. Reyes y el 19 de junio se festejan siempre el día que
+caen (en 2024 el 19 de junio fue miércoles y se festejó ese mismo día).
 
 De dónde sacamos los feriados:
 - El Observador, "Feriados en Uruguay 2025" (2 de enero de 2025).
@@ -25,6 +27,12 @@ En 2026 ningún feriado se movió de día. Reyes cayó martes, pero ese feriado 
 Para simplificar: en liceos y UTU cada plan termina en una fecha distinta (entre fines
 de noviembre y principios de diciembre). Usamos la fecha en que termina la mayoría.
 UdelaR no está incluida porque cada facultad tiene su propio calendario.
+
+Paros: no hay una columna de paros. En los paros generales parciales del PIT-CNT que
+encontramos (29/10/2025, 10/06/2026 y 11/08/2026) los ómnibus siguieron andando con la
+frecuencia de siempre, así que no deberían cambiar mucho la cantidad de pasajeros. Si en la
+tabla de "Días raros" del notebook 03 aparece un día bajo que el calendario no explica, hay
+que fijarse si fue un paro de transporte y agregarlo acá.
 
 Para agregar otro año, hay que completar las listas de abajo con las fechas oficiales.
 """
@@ -81,6 +89,8 @@ TURISMO = [(date(2024, 3, 25), date(2024, 3, 31)), (date(2025, 4, 14), date(2025
            (date(2026, 3, 30), date(2026, 4, 5))]
 
 # Elecciones nacionales y departamentales (siempre caen domingo). En 2026 no hubo.
+# Esos domingos los ómnibus andan con la flota de un día hábil durante la votación, así que
+# no se parecen a un domingo común.
 ELECCIONES = {
     date(2024, 6, 30): "Elecciones internas",
     date(2024, 10, 27): "Elecciones nacionales",

@@ -13,6 +13,13 @@ Las decisiones salen de lo que vimos en el análisis de datos (notebook 04):
   0,95 y 1,00). Si se ponen todos juntos en una regresión lineal, los coeficientes quedan
   inestables. Por eso el modelo lineal usa solo cuatro: la mediana, el rezago de 1 día,
   el de 7 días y el total de la línea el día anterior.
+- El rezago de 1 día no sirve igual todos los días. Para un lunes, "ayer" es un domingo,
+  y para el día después de un feriado, "ayer" es el feriado. Una regresión lineal le da
+  el mismo peso todos los días, así que los lunes la tiraría para abajo. Por eso se agrega
+  una copia del rezago de 1 día que vale 0 cuando ayer fue un tipo de día distinto a hoy,
+  y una categoría con el cambio de tipo de día (por ejemplo "domingo a hábil").
+- La lluvia entra como log(1 + mm). Así una tormenta de 40 mm no pesa 40 veces más que
+  una lluvia de 1 mm, que es lo que pasaría si entrara tal cual.
 """
 
 import time
@@ -39,6 +46,8 @@ REZAGOS_LINEAL = [
     "pasajeros_mediana_4sem", "pasajeros_lag_1d", "pasajeros_lag_7d", "pasajeros_linea_dia_anterior",
 ]
 CLIMA = ["temperatura_pron", "lluvia_pron_mm", "lluvia_pron_dia_mm"]
+# El clima como lo usa el modelo lineal (la lluvia en log)
+CLIMA_LINEAL = ["temperatura_pron", "log_lluvia_pron_mm", "log_lluvia_pron_dia_mm"]
 # Columnas de sí o no (se pasan a 1 y 0)
 BANDERAS = [
     "es_feriado", "es_no_laborable", "es_carnaval", "es_turismo", "es_eleccion",
@@ -46,11 +55,11 @@ BANDERAS = [
     "clases_primaria", "clases_media", "llueve_pron",
 ]
 # Columnas que son categorías (nombres) y no números
-CATEGORICAS = ["linea", "tipo_dia", "tipo_linea"]
+CATEGORICAS = ["linea", "tipo_dia", "tipo_dia_ayer", "tipo_linea"]
 
 # Columnas que sí o sí tienen que estar en gold. Las de BANDERAS se usan si están.
 OBLIGATORIAS = [
-    "linea", "fecha", "hora", "dia_semana", "tipo_dia", "tipo_linea", OBJETIVO,
+    "linea", "fecha", "hora", "dia_semana", "tipo_dia", "tipo_dia_ayer", "tipo_linea", OBJETIVO,
     *REZAGOS, *CLIMA,
 ]
 OPCIONALES = [*BANDERAS, "nombre_dia_especial"]
@@ -62,20 +71,22 @@ OPCIONALES = [*BANDERAS, "nombre_dia_especial"]
 def columnas_a_leer(columnas_gold):
     """Dice qué columnas de gold hay que bajar a pandas, y qué columnas opcionales faltan.
 
-    'tipo_dia' no está guardada en gold. Se agrega antes con variables.con_tipo_dia.
-    Las columnas de fin de año aparecen solo si gold se volvió a armar con el calendario nuevo.
+    'tipo_dia' y 'tipo_dia_ayer' no están guardadas en gold. Se agregan antes con
+    variables.con_tipo_dia. Las columnas de fin de año aparecen solo si gold se volvió a
+    armar con el calendario nuevo.
     """
     columnas_gold = set(columnas_gold)
     faltan = [c for c in OBLIGATORIAS if c not in columnas_gold]
     if faltan:
-        raise ValueError(f"Faltan columnas obligatorias en gold: {faltan}")
+        raise ValueError(f"Faltan columnas obligatorias en gold: {faltan}. "
+                         "Si falta 'tipo_dia_ayer', hay que volver a correr 03_features_gold.")
     opcionales = [c for c in OPCIONALES if c in columnas_gold]
     sin = [c for c in OPCIONALES if c not in columnas_gold]
     return OBLIGATORIAS + opcionales, sin
 
 
 def categorias_desde(train):
-    """Lista de valores posibles de linea, tipo_dia y tipo_linea, sacada SOLO de train.
+    """Lista de valores posibles de linea, tipo_dia, tipo_dia_ayer y tipo_linea, sacada SOLO de train.
 
     Si en val aparece una línea que no estaba en train, queda vacía. La regresión no usa
     la línea, así que no le afecta.
@@ -97,6 +108,13 @@ def preparar(df, categorias):
         df[c] = df[c].astype("float64")
     for c in REZAGOS_LINEAL:
         df[f"log_{c}"] = np.log1p(df[c])                  # log(1 + x) para el modelo lineal
+    for c in ("lluvia_pron_mm", "lluvia_pron_dia_mm"):
+        df[f"log_{c}"] = np.log1p(df[c])
+    # El rezago de 1 día solo cuando ayer fue el mismo tipo de día que hoy. Si no, vale 0.
+    # Ejemplo: un martes hábil usa el lunes, pero un lunes no usa el domingo.
+    mismo_tipo = df["tipo_dia_ayer"].astype(str) == df["tipo_dia"].astype(str)
+    df["log_lag_1d_mismo_tipo"] = df["log_pasajeros_lag_1d"] * mismo_tipo
+    df["cambio_dia"] = df["tipo_dia_ayer"].astype(str) + " a " + df["tipo_dia"].astype(str)
     df["hora_cat"] = df["hora"].astype(str)                # la hora como categoría, no como número
     df["hora_tipo"] = df["hora_cat"] + "_" + df["tipo_dia"].astype(str)   # ejemplo "8_hábil"
     for c, cats in categorias.items():
@@ -155,10 +173,14 @@ def _lineal(columnas, alfa, interacciones):
     Sin interacciones: la hora y el tipo de día suman cada uno por su lado.
     Con interacciones: además hay una columna por cada par (hora, tipo de día). Así cada
     tipo de día puede tener su propia forma a lo largo del día.
+
+    En las dos versiones está 'cambio_dia' (qué tipo de día fue ayer y cuál es hoy) y el
+    rezago de 1 día que solo cuenta cuando ayer fue el mismo tipo de día.
     """
-    numericas = ([f"log_{c}" for c in REZAGOS_LINEAL] + CLIMA
+    numericas = ([f"log_{c}" for c in REZAGOS_LINEAL] + ["log_lag_1d_mismo_tipo"] + CLIMA_LINEAL
                  + [b for b in BANDERAS if b in columnas])
-    categoricas = ["hora_cat", "tipo_dia", "tipo_linea"] + (["hora_tipo"] if interacciones else [])
+    categoricas = (["hora_cat", "tipo_dia", "cambio_dia", "tipo_linea"]
+                   + (["hora_tipo"] if interacciones else []))
     pre = ColumnTransformer([
         ("num", StandardScaler(), numericas),
         ("cat", OneHotEncoder(handle_unknown="ignore"), categoricas),
@@ -262,15 +284,15 @@ def grupos_de_variables(columnas):
     """Grupos de variables que se mezclan juntas. Solo quedan las columnas que existen."""
     columnas = set(columnas)
     grupos = {
-        "rezagos de pasajeros": REZAGOS + [f"log_{c}" for c in REZAGOS_LINEAL],
+        "rezagos de pasajeros": REZAGOS + [f"log_{c}" for c in REZAGOS_LINEAL] + ["log_lag_1d_mismo_tipo"],
         "hora": ["hora", "hora_cat", "hora_tipo"],
-        "tipo de día y día de la semana": ["tipo_dia", "dia_semana", "hora_tipo"],
+        "tipo de día (hoy y ayer)": ["tipo_dia", "tipo_dia_ayer", "cambio_dia", "dia_semana", "hora_tipo"],
         "línea": ["linea", "tipo_linea"],
         "feriados y días especiales": ["es_feriado", "es_no_laborable", "es_carnaval", "es_turismo",
                                         "es_eleccion", "es_dia_sin_servicio"],
         "fin de año": ["es_vispera_navidad", "es_fin_de_anio", "es_semana_fiestas"],
         "clases": ["clases_primaria", "clases_media"],
-        "clima": [*CLIMA, "llueve_pron"],
+        "clima": [*CLIMA, "log_lluvia_pron_mm", "log_lluvia_pron_dia_mm", "llueve_pron"],
     }
     grupos = {g: [c for c in cols if c in columnas] for g, cols in grupos.items()}
     return {g: cols for g, cols in grupos.items() if cols}

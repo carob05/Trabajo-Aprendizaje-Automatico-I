@@ -36,4 +36,3 @@ Databricks no se puede conectar a la página de la Intendencia ni a Open-Meteo, 
 
 - `notebooks/`: los pasos del trabajo, en orden.
 - `src/bondis/`: las funciones que usan los notebooks. `config.py` tiene todos los nombres de tablas y fechas.
-- `test/`: pruebas automáticas de las funciones (se corren con `pytest`).

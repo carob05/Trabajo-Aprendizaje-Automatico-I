@@ -5,11 +5,16 @@ Pasos:
 2. lineas_incluidas:  elige las líneas que funcionaron suficientes días en cada año
 3. grilla:            arma todas las combinaciones línea x día x hora, con 0 donde nadie subió
 4. agregar_rezagos:   agrega cuántos pasajeros hubo en días anteriores
-5. asignar_particion: marca cada fila como train, val o test según la fecha
+5. linea_en_marcha:   marca las filas de una línea que todavía no había arrancado
+6. asignar_particion: marca cada fila como train, val o test según la fecha
 """
 
 from pyspark.sql import functions as F
 from pyspark.sql.window import Window
+
+# Columnas del calendario que también se guardan para el día anterior ("ayer_...").
+# Con ellas se sabe qué tipo de día fue ayer (ver variables.con_tipo_dia).
+COLUMNAS_AYER = ["es_no_laborable", "es_carnaval", "es_turismo"]
 
 # Un "rezago" es mirar para atrás: cuántos pasajeros hubo en la misma línea y a la
 # misma hora, 1, 7, 14, 21 y 28 días antes. Ejemplo: para el martes 12 a las 8,
@@ -128,7 +133,16 @@ def agregar_rezagos(df):
 
 
 def agregar_variables_fecha(df, calendario):
-    """Agrega año, mes, día del mes, día de la semana y las columnas del calendario (feriados, clases)."""
+    """Agrega año, mes, día del mes, día de la semana y las columnas del calendario (feriados, clases).
+
+    También agrega algunas columnas del calendario del día anterior, con el nombre "ayer_...".
+    Por ejemplo, el lunes de Carnaval tiene ayer_es_carnaval = False y el martes tiene True.
+    El calendario se sabe de antemano, así que usar el de ayer no es hacer trampa.
+    """
+    ayer = calendario.select(
+        F.date_add("fecha", 1).alias("fecha"),
+        *[F.col(c).alias(f"ayer_{c}") for c in COLUMNAS_AYER],
+    )
     return (
         df
         .withColumn("anio", F.year("fecha"))
@@ -137,6 +151,7 @@ def agregar_variables_fecha(df, calendario):
         .withColumn("dia_semana", ((F.dayofweek("fecha") + 5) % 7) + 1)   # 1 = lunes, 7 = domingo
         .withColumn("es_fin_de_semana", F.col("dia_semana") >= 6)
         .join(calendario, "fecha", "left")
+        .join(ayer, "fecha", "left")
     )
 
 
@@ -146,16 +161,38 @@ def tipo_linea(df):
     return df.withColumn("tipo_linea", F.when(prefijo == "", "NUM").otherwise(prefijo))
 
 
-def marcar_fila_completa(df, columnas):
+def linea_en_marcha(df, agregado, dias=28):
+    """Agrega 'linea_en_marcha': falso en las filas de una línea antes de que arrancara.
+
+    La grilla le pone 0 pasajeros a todos los días, también a los días en que la línea
+    todavía no existía. Esos ceros no son un dato real, y además los primeros 28 días
+    después de arrancar tienen rezagos que miran días sin línea. Por eso se marca como
+    "en marcha" recién desde el primer día con pasajeros más 'dias' días.
+    El primer día de cada línea solo mira para atrás, así que no usa nada del futuro.
+    """
+    primera = (agregado.where(F.col("pasajeros") > 0)
+               .groupBy("linea").agg(F.min("fecha").alias("_primera")))
+    return (
+        df.join(primera, "linea", "left")
+        .withColumn("linea_en_marcha",
+                    F.coalesce(F.col("fecha") >= F.date_add("_primera", dias), F.lit(False)))
+        .drop("_primera")
+    )
+
+
+def marcar_fila_completa(df, columnas, condicion_extra=None):
     """Agrega 'fila_completa': verdadero si ninguna de las columnas indicadas está vacía.
 
-    Los modelos usan solo filas completas. Así todos se entrenan y se prueban
-    con exactamente las mismas filas, y la comparación es justa.
+    Si se pasa 'condicion_extra' (por ejemplo, que la línea ya esté en marcha), también
+    tiene que cumplirse. Los modelos usan solo filas completas. Así todos se entrenan y
+    se prueban con exactamente las mismas filas, y la comparación es justa.
     """
     cond = None
     for c in columnas:
         c_ok = F.col(c).isNotNull()
         cond = c_ok if cond is None else (cond & c_ok)
+    if condicion_extra is not None:
+        cond = cond & condicion_extra
     return df.withColumn("fila_completa", cond)
 
 
