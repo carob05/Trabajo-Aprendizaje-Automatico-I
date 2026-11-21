@@ -28,11 +28,10 @@ Para simplificar: en liceos y UTU cada plan termina en una fecha distinta (entre
 de noviembre y principios de diciembre). Usamos la fecha en que termina la mayoría.
 UdelaR no está incluida porque cada facultad tiene su propio calendario.
 
-Paros: no hay una columna de paros. En los paros generales parciales del PIT-CNT que
-encontramos (29/10/2025, 10/06/2026 y 11/08/2026) los ómnibus siguieron andando con la
-frecuencia de siempre, así que no deberían cambiar mucho la cantidad de pasajeros. Si en la
-tabla de "Días raros" del notebook 03 aparece un día bajo que el calendario no explica, hay
-que fijarse si fue un paro de transporte y agregarlo acá.
+Paros: no pusimos una columna de paros. Buscamos los paros generales del PIT-CNT de estos
+años (29/10/2025, 10/06/2026 y 11/08/2026) y en todos los ómnibus anduvieron como siempre.
+Además en la tabla de "Días raros" del notebook 03 no aparece ningún día hábil bajo que el
+calendario no explique. Si algún día aparece uno, lo buscamos y lo agregamos acá.
 
 Para agregar otro año, hay que completar las listas de abajo con las fechas oficiales.
 """
@@ -115,9 +114,8 @@ def es_semana_fiestas(d):
 
 
 # Días en que casi no hay ómnibus (se sabe de antemano).
-# Lo revisamos en los datos: esos días todo el sistema lleva entre 116 y 150 pasajeros.
-# Los de 2026 los pusimos porque pasa todos los años, pero hay que confirmarlo en la tabla
-# de "Días raros" del notebook 03 cuando estén cargados los datos.
+# Lo comprobamos en la tabla de "Días raros" del notebook 03: en los tres años, esos días
+# todo el sistema lleva entre 116 y 177 pasajeros. Son los 6 días más bajos de todos.
 SIN_SERVICIO = [date(2024, 1, 1), date(2024, 5, 1), date(2025, 1, 1), date(2025, 5, 1),
                 date(2026, 1, 1), date(2026, 5, 1)]
 

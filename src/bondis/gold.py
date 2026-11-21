@@ -161,21 +161,29 @@ def tipo_linea(df):
     return df.withColumn("tipo_linea", F.when(prefijo == "", "NUM").otherwise(prefijo))
 
 
-def linea_en_marcha(df, agregado, dias=28):
-    """Agrega 'linea_en_marcha': falso en las filas de una línea antes de que arrancara.
+def linea_en_marcha(df, agregado, fecha_inicio, dias=28, margen=7):
+    """Agrega 'linea_en_marcha': falso en los días en que una línea todavía no existía.
 
     La grilla le pone 0 pasajeros a todos los días, también a los días en que la línea
-    todavía no existía. Esos ceros no son un dato real, y además los primeros 28 días
-    después de arrancar tienen rezagos que miran días sin línea. Por eso se marca como
-    "en marcha" recién desde el primer día con pasajeros más 'dias' días.
-    El primer día de cada línea solo mira para atrás, así que no usa nada del futuro.
+    todavía no andaba. Ese 0 no es un dato de verdad. Además, el primer mes después de
+    arrancar, los rezagos miran días en que la línea no existía. Por eso una línea que
+    arrancó en el medio cuenta como "en marcha" recién 'dias' días después de su primer viaje.
+
+    Las líneas que ya andaban cuando empiezan nuestros datos (su primer viaje cae en los
+    primeros 'margen' días) cuentan como en marcha desde el principio. Les dejamos una semana
+    de margen porque el 1° de enero casi no hay ómnibus y algunas líneas no andan el fin de
+    semana. Si una línea no anda en verano, su primer mes de 2024 también queda marcado, pero
+    está bien, porque esas semanas sus rezagos miran el verano, cuando la línea no andaba.
+
+    Para saber cuándo arrancó una línea solo se mira para atrás, así que no usa nada del futuro.
     """
     primera = (agregado.where(F.col("pasajeros") > 0)
                .groupBy("linea").agg(F.min("fecha").alias("_primera")))
+    ya_andaba = F.col("_primera") < F.date_add(F.lit(fecha_inicio).cast("date"), margen)
     return (
         df.join(primera, "linea", "left")
         .withColumn("linea_en_marcha",
-                    F.coalesce(F.col("fecha") >= F.date_add("_primera", dias), F.lit(False)))
+                    F.coalesce(ya_andaba | (F.col("fecha") >= F.date_add("_primera", dias)), F.lit(False)))
         .drop("_primera")
     )
 

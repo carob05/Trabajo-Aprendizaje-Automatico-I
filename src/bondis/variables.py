@@ -30,9 +30,9 @@ def con_tipo_dia(df):
     Los feriados laborables (los que el comercio abre) quedan como el día de la semana
     que les toca. Para saber que son feriado se mira la columna 'es_feriado'.
 
-    'tipo_dia_ayer' es lo mismo pero para el día anterior. Sirve porque el rezago de 1 día
-    de un lunes es un domingo, y el del día después de un feriado es el feriado. Solo se
-    agrega si gold tiene las columnas "ayer_..." (gold armado con la versión nueva del 03).
+    'tipo_dia_ayer' es lo mismo pero para el día anterior. Lo necesitamos porque el rezago
+    de 1 día de un lunes es un domingo, y el del día después de un feriado es el feriado
+    (ver la sección 3.3 del EDA). Solo se agrega si gold tiene las columnas "ayer_...".
     """
     df = df.withColumn("tipo_dia", _regla_tipo_dia(
         F.col("es_no_laborable"), F.col("es_carnaval"), F.col("es_turismo"), F.col("dia_semana")))

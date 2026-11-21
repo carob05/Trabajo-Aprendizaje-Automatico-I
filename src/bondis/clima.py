@@ -40,6 +40,10 @@ Los pronósticos guardados empiezan el 19/01/2024 (GFS, ICON y GEM) y el 03/02/2
 Antes de esa fecha el pronóstico queda vacío. No es un problema, porque esos días igual
 se dejan afuera al entrenar (no tienen los rezagos de 28 días).
 
+Open-Meteo no usa exactamente el punto que le pedimos, usa el punto de su grilla más
+cercano. Por eso el archivo de pronóstico dice 34.85S 56.13W y el de observado 34.90S 56.19W.
+Están a unos pocos kilómetros, así que para Montevideo da lo mismo.
+
 Los CSV de Open-Meteo traen unas líneas de información antes de la tabla de datos.
 Por eso se busca la línea que empieza con "time," y se lee desde ahí con pandas
 (son archivos chicos).
@@ -96,7 +100,7 @@ def clasificar_archivos(carpeta):
         raise FileNotFoundError(
             f"No hay ningún archivo de pronóstico en {carpeta}. "
             f"Archivos encontrados: {[Path(a).name for a in archivos]}. "
-            "Revisá que se hayan bajado con el enlace de pronóstico de clima.py y en formato CSV."
+            "Hay que revisar que se hayan bajado con el enlace de pronóstico de clima.py y en formato CSV."
         )
     return grupos
 
@@ -156,17 +160,26 @@ def tabla_clima_pandas(ruta_pronostico, ruta_observado=None):
     temp, cols_t = _promedio(p, "temperature_2m_previous_day1")
     lluvia, cols_p = _promedio(p, "precipitation_previous_day1")
 
+    # Un servicio cuenta como disponible en una hora si dio la temperatura y también la lluvia.
+    # Antes mirábamos solo la lluvia, y quedaban unas pocas horas con lluvia pero sin
+    # temperatura (en el EDA la temperatura tenía un poquito más de vacíos que la lluvia).
+    pares = [(c.replace("precipitation_", "temperature_2m_", 1), c) for c in cols_p]
+    pares = [(t, l) for t, l in pares if t in p.columns]
+    if not pares:
+        raise ValueError(f"No encontramos pares de temperatura y lluvia del mismo servicio. Columnas: {list(p.columns)}")
+    disponibles = sum((p[t].notna() & p[l].notna()).astype("int32") for t, l in pares)
+
     out = pd.DataFrame({
         "fecha": p["time"].dt.date,
         "hora": p["time"].dt.hour.astype("int32"),
         "temperatura_pron": temp.round(2),
         "lluvia_pron_mm": lluvia.round(3),
-        "modelos_disponibles": p[cols_p].notna().sum(axis=1).astype("int32"),
+        "modelos_disponibles": disponibles.astype("int32"),
     })
     out["llueve_pron"] = out["lluvia_pron_mm"] >= UMBRAL_LLUVIA_MM
     # Lluvia pronosticada para todo el día. También se conoce el día anterior, igual que el resto.
     out["lluvia_pron_dia_mm"] = out.groupby("fecha")["lluvia_pron_mm"].transform("sum").round(3)
-    # Si ningún servicio tiene dato para esa hora, todo el clima queda vacío
+    # Si ningún servicio dio las dos cosas para esa hora, todo el clima de esa hora queda vacío
     sin_datos = out["modelos_disponibles"] == 0
     out.loc[sin_datos, ["temperatura_pron", "lluvia_pron_mm", "lluvia_pron_dia_mm"]] = None
     out["llueve_pron"] = out["llueve_pron"].where(~sin_datos, None)
