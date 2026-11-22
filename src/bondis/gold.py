@@ -112,7 +112,8 @@ def agregar_rezagos(df):
     # rara (un feriado, Carnaval, un paro) no la mueve. Con 4 valores, la mediana es el
     # promedio de los dos del medio. Ejemplo: con 100, 110, 120 y 10, ordenados quedan
     # 10, 100, 110, 120, y la mediana es (100 + 110) / 2 = 105. El promedio daría 85.
-    # Si falta alguno de los 4 valores, la mediana queda vacía.
+    # Con dos semanas raras sí se mueve (10, 10, 100, 110 da 55). Eso se arregla en
+    # modelos.corregir_rezagos. Si falta alguno de los 4 valores, la mediana queda vacía.
     semanas = [F.col(f"pasajeros_lag_{n}d") for n in (7, 14, 21, 28)]
     ordenados = F.sort_array(F.array(*semanas))
     alguno_nulo = None

@@ -13,7 +13,7 @@ Queremos predecir **cuántas personas van a subir a cada línea de ómnibus de M
 | `04_eda` | Mira los datos de train para entenderlos antes de modelar | Nada (solo gráficos y conclusiones) |
 | `05_baseline` | Prueba reglas simples para saber qué error hay que superar | `resultados_modelos` (etapa baseline) |
 | `06_modelo` | Regresión Ridge: aprende con 2024, se elige con 2025 y se prueba una vez en 2026 | `resultados_modelos` (etapas modelo y test) |
-| `07_comparacion_validacion` | Compara las dos formas de elegir el modelo (opción 1 y opción 2) con el mismo test. Solo lee gold | `comparacion_validacion` (etapas validacion y test) |
+| `07_comparacion_validacion` | Compara las dos formas de elegir el modelo (opción 1 y opción 2) con el mismo test. Además de Ridge prueba árboles con boosting, así que el modelo final sale de acá. Solo lee gold | `comparacion_validacion` (etapas validacion y test) |
 
 ## Cómo se dividen los datos
 

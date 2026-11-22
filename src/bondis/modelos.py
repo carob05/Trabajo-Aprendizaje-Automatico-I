@@ -17,10 +17,13 @@ Las decisiones salen de lo que vimos en el análisis de datos (notebook 04):
   y para el día después de un feriado, "ayer" es el feriado. Por eso hay una categoría con
   el cambio de tipo de día (por ejemplo "domingo a hábil") y una copia del rezago de 1 día
   que vale 0 cuando ayer fue un tipo de día distinto a hoy.
-- Si el rezago de 1 o de 7 días cae en un día raro (feriado, 1° de mayo, paro...), ese
-  valor no dice nada de hoy. Ejemplo: el 2 de mayo, "ayer" es el 1° de mayo, que casi no
-  tiene ómnibus. En esos casos el rezago se cambia por la mediana de 4 semanas
-  (ver corregir_rezagos). La mediana no tiene ese problema porque un valor raro no la mueve.
+- Si un rezago cae en un día raro (feriado, 1° de mayo, paro...), ese valor no dice nada
+  de hoy. Ejemplo: el 2 de mayo, "ayer" es el 1° de mayo, que casi no tiene ómnibus.
+  La mediana de 4 semanas aguanta un día raro, pero no dos: con 4 valores es el promedio
+  de los dos del medio, así que si dos semanas caen en feriado queda en la mitad. Pasa los
+  miércoles de enero de 2025 (25/12 y 1/1 fueron miércoles) y el 8 de mayo de 2025
+  (1° de mayo y jueves de Turismo). Por eso armamos una "mediana limpia" sin las semanas
+  raras y con ella cambiamos los rezagos raros (ver corregir_rezagos).
 - La mediana mira 4 semanas para atrás, así que cuando empiezan o terminan las clases
   queda desactualizada. salto_clases avisa eso (ver calendario.salto_clases).
 - La lluvia entra como log(1 + mm). Así una tormenta de 40 mm no pesa 40 veces más que
@@ -44,6 +47,7 @@ from bondis.metricas import ESTADISTICOS
 
 OBJETIVO = "pasajeros"                    # lo que queremos predecir
 REFERENCIA = "pasajeros_mediana_4sem"     # la regla simple que hay que superar
+MEDIANA_LIMPIA = "pasajeros_mediana_limpia"   # la mediana sin las semanas que cayeron en un día raro
 
 REZAGOS = [
     "pasajeros_lag_1d", "pasajeros_lag_7d", "pasajeros_lag_14d", "pasajeros_lag_21d",
@@ -52,7 +56,7 @@ REZAGOS = [
 ]
 # Los rezagos que usa el modelo lineal (los que no se repiten entre sí)
 REZAGOS_LINEAL = [
-    "pasajeros_mediana_4sem", "pasajeros_lag_1d", "pasajeros_lag_7d", "pasajeros_linea_dia_anterior",
+    MEDIANA_LIMPIA, "pasajeros_lag_1d", "pasajeros_lag_7d", "pasajeros_linea_dia_anterior",
 ]
 CLIMA = ["temperatura_pron", "lluvia_pron_mm", "lluvia_pron_dia_mm"]
 # El clima como lo usa el modelo lineal (la lluvia en log)
@@ -65,8 +69,10 @@ BANDERAS = [
 ]
 # Cuánto cambió el estado de las clases respecto de las 4 semanas que mira la mediana
 SALTO_CLASES = ["salto_clases_primaria", "salto_clases_media"]
-# Rezagos que se cambian por la mediana cuando caen en un día raro: (días para atrás, columna)
-REZAGOS_A_CORREGIR = [(1, "pasajeros_lag_1d"), (7, "pasajeros_lag_7d")]
+# Rezagos semanales que forman la mediana: (días para atrás, columna)
+SEMANALES = [(7, "pasajeros_lag_7d"), (14, "pasajeros_lag_14d"), (21, "pasajeros_lag_21d"), (28, "pasajeros_lag_28d")]
+# Rezagos que se cambian por la mediana limpia cuando caen en un día raro
+REZAGOS_A_CORREGIR = [(1, "pasajeros_lag_1d"), *SEMANALES]
 # Columnas que son categorías (nombres) y no números
 CATEGORICAS = ["linea", "tipo_dia", "tipo_dia_ayer", "tipo_linea"]
 
@@ -115,29 +121,51 @@ def _por_fecha(fechas, funcion):
 
 
 def corregir_rezagos(df):
-    """Cambia por la mediana de 4 semanas los rezagos que caen en un día raro.
+    """Arma la mediana limpia y cambia por ella los rezagos que caen en un día raro.
 
-    Un rezago se cambia si el día al que apunta es especial (calendario.categoria_dia) y
-    no es la misma clase de día especial que hoy. Ejemplos:
-    - 2 de mayo: el rezago de 1 día es el 1° de mayo (sin servicio). Se cambia.
-    - 8 de mayo: el rezago de 7 días es el 1° de mayo. Se cambia.
+    Un rezago es raro si el día al que apunta es especial (calendario.categoria_dia) y no
+    es la misma clase de día especial que hoy. Ejemplos:
+    - 2 de mayo: el rezago de 1 día es el 1° de mayo (sin servicio). Es raro.
+    - 8 de mayo de 2025: los rezagos de 7 y 21 días son el 1° de mayo y el jueves de
+      Turismo. Son raros.
     - Martes de Carnaval: el rezago de 1 día es el lunes de Carnaval. Es la misma clase
       de día, así que se deja.
-    El total de la línea el día anterior se cambia por la suma de las medianas de ese día.
-    Todo sale del calendario y de días pasados, así que se sabe la noche anterior.
+
+    Pasos:
+    1. La mediana limpia (MEDIANA_LIMPIA) es la mediana de los rezagos de 7, 14, 21 y 28
+       días que no son raros. Si los 4 son raros, queda la mediana de siempre.
+       Si ninguno es raro, da lo mismo que la mediana de siempre.
+    2. Los rezagos raros (1, 7, 14, 21 y 28 días) se cambian por la mediana limpia, y el
+       promedio de 4 semanas se vuelve a calcular con los rezagos ya cambiados.
+    3. Si ayer fue raro, el total de la línea el día anterior se cambia por la suma de las
+       medianas limpias de hoy.
+
+    La columna REFERENCIA (la regla simple) no se toca, para que la regla sea la misma
+    que en el 05. Todo sale del calendario y de días pasados, así que se sabe la noche anterior.
     Devuelve la tabla y cuántas filas se cambiaron de cada rezago.
     """
     hoy = _por_fecha(df["fecha"], calendario.categoria_dia).fillna("")
-    cambiadas = {}
+    raros = {}
     for k, col in REZAGOS_A_CORREGIR:
         antes = _por_fecha(df["fecha"], lambda d, k=k: calendario.categoria_dia(d - timedelta(days=k))).fillna("")
-        raro = ((antes != "") & (antes != hoy)).to_numpy()
-        df.loc[raro, col] = df.loc[raro, REFERENCIA]
+        raros[col] = ((antes != "") & (antes != hoy)).to_numpy()
+
+    semanas = np.column_stack([np.where(raros[c], np.nan, df[c].to_numpy(float)) for _, c in SEMANALES])
+    todas_raras = np.isnan(semanas).all(axis=1)
+    semanas[todas_raras] = 0.0   # para que nanmedian no avise. Esas filas se pisan abajo
+    limpia = np.nanmedian(semanas, axis=1)
+    df[MEDIANA_LIMPIA] = np.where(todas_raras, df[REFERENCIA].to_numpy(float), limpia)
+
+    cambiadas = {"mediana_limpia_distinta": int((df[MEDIANA_LIMPIA] != df[REFERENCIA]).sum())}
+    for _, col in REZAGOS_A_CORREGIR:
+        raro = raros[col]
+        df.loc[raro, col] = df.loc[raro, MEDIANA_LIMPIA]
         cambiadas[col] = int(raro.sum())
-        if k == 1:
-            suma_medianas = df.groupby(["linea", "fecha"])[REFERENCIA].transform("sum")
-            df.loc[raro, "pasajeros_linea_dia_anterior"] = suma_medianas[raro]
-            cambiadas["pasajeros_linea_dia_anterior"] = int(raro.sum())
+    df["pasajeros_prom_4sem"] = df[[c for _, c in SEMANALES]].mean(axis=1)
+
+    raro_ayer = raros["pasajeros_lag_1d"]
+    suma_medianas = df.groupby(["linea", "fecha"])[MEDIANA_LIMPIA].transform("sum")
+    df.loc[raro_ayer, "pasajeros_linea_dia_anterior"] = suma_medianas[raro_ayer]
     return df, cambiadas
 
 
@@ -229,14 +257,14 @@ class SelectorColumnas(BaseEstimator, TransformerMixin):
 
 
 class SobreReferencia(BaseEstimator, RegressorMixin):
-    """Modelo que aprende cuánto corregir la mediana de 4 semanas.
+    """Modelo que aprende cuánto corregir la mediana limpia de 4 semanas.
 
     En vez de aprender "cuántos pasajeros hay", aprende "cuántos pasajeros de más o de
     menos hay respecto de la mediana" (eso se llama residual).
     Predicción final = mediana + corrección. Si da negativo, se pone 0.
     """
 
-    def __init__(self, estimador, referencia=REFERENCIA):
+    def __init__(self, estimador, referencia=MEDIANA_LIMPIA):
         self.estimador = estimador
         self.referencia = referencia
 
@@ -252,7 +280,7 @@ class SobreReferencia(BaseEstimator, RegressorMixin):
 def columnas_arbol(columnas):
     """Columnas que usan los modelos de árboles."""
     base = ["hora", "dia_semana", "linea", "tipo_dia", "tipo_dia_ayer", "tipo_linea",
-            *REZAGOS, *CLIMA, *SALTO_CLASES]
+            *REZAGOS, MEDIANA_LIMPIA, *CLIMA, *SALTO_CLASES]
     return base + [c for c in BANDERAS if c in columnas]
 
 
@@ -295,7 +323,7 @@ def _arbol(columnas, familia, hojas, iteraciones, tasa, semilla):
     Tres versiones (familias):
     poisson:  predice los pasajeros directo, con un error pensado para conteos (0, 1, 2, ...).
     log:      predice log(1 + pasajeros), igual que el modelo lineal.
-    residual: predice la corrección sobre la mediana de 4 semanas, con error absoluto.
+    residual: predice la corrección sobre la mediana limpia de 4 semanas, con error absoluto.
 
     No se usa early_stopping, porque separa una parte de train al azar para controlar
     y mezclaría días del futuro con días del pasado.
@@ -418,7 +446,8 @@ def grupos_de_variables(columnas):
     """Grupos de variables que se mezclan juntas. Solo quedan las columnas que existen."""
     columnas = set(columnas)
     grupos = {
-        "rezagos de pasajeros": REZAGOS + [f"log_{c}" for c in REZAGOS_LINEAL] + ["log_lag_1d_mismo_tipo"],
+        "rezagos de pasajeros": (REZAGOS + [MEDIANA_LIMPIA] + [f"log_{c}" for c in REZAGOS_LINEAL]
+                                 + ["log_lag_1d_mismo_tipo"]),
         "hora": ["hora", "hora_cat"],
         # hora_tipo (la combinación hora x tipo de día) va solo acá, para no mezclarla dos veces
         "tipo de día (hoy y ayer)": ["tipo_dia", "tipo_dia_ayer", "cambio_dia", "dia_semana", "hora_tipo"],
@@ -480,7 +509,7 @@ def coeficientes(modelo):
     Para eso se divide por el desvío y queda "por cada unidad" (coef_por_unidad):
     - En una bandera (0 o 1), exp(coef_por_unidad) - 1 es más o menos cuánto cambian los
       pasajeros, en porcentaje, cuando la bandera vale 1 (columna cambio_pct).
-    - En una variable con log (log_pasajeros_mediana_4sem), coef_por_unidad es cuánto sube
+    - En una variable con log (log_pasajeros_mediana_limpia), coef_por_unidad es cuánto sube
       el log de los pasajeros si el log de la variable sube 1. Si da 0,5, que la mediana
       sea el doble hace que la predicción suba más o menos un 41 % (2 elevado a 0,5).
     """
