@@ -150,7 +150,7 @@ Como referencia, la mediana de 4 semanas tiene un MAE de 39,7 y la mejor regla s
 - **Entrenar con los meses de 2025 ya pasados (opción 2) no ayudó.** Las regresiones útiles se equivocan entre 0,4 y 2,2 pasajeros por hora más de abril a diciembre, y en los árboles la diferencia es ruido. Creemos que es porque el nivel de cada línea ya entra por los rezagos, así que el modelo se adapta solo, y la forma (cómo pesan la hora, el tipo de día y los feriados) casi no cambió de 2024 a 2025.
 - Las regresiones con α de 10⁵ y 10⁶ sí mejoran con la opción 2, pero porque con más filas el mismo α castiga menos, no por los datos nuevos.
 - **Ridge no sobreajusta**: el error de train y el de validación son casi iguales (30,5 y 30,7), y la curva de aprendizaje se aplana. El castigo no hace falta: con α de 1 a 10⁴ el error es casi el mismo.
-- Los días que siguen costando son el paro del 31/07/2025 (en 2024 no hubo ningún paro general para aprenderlo) y la primera semana de enero, cuando la gente se va de vacaciones y ninguna variable lo marca.
+- Los días que siguen costando son la primera semana de enero, cuando la gente se va de vacaciones y ninguna variable lo marca, y el paro del 31/07/2025. Con lo que aprende del paro de UCOT de 2024, la regresión ya no se pasa en promedio ese día, pero baja todas las líneas por igual y en un paro cada empresa sale con una cantidad distinta de ómnibus.
 
 ### 5.2 Test (2026, enero a octubre)
 
