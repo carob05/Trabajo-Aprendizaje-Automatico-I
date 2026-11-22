@@ -1,6 +1,6 @@
 """Clima de cada hora en Montevideo, a partir de archivos CSV de la página Open-Meteo.
 
-Usamos dos archivos que están en raw/clima:
+Usamos dos tipos de archivo, que se suben a raw/clima:
 
 - Pronóstico: lo que los servicios del tiempo decían 24 horas ANTES. Es lo único que
   sabríamos en la vida real al predecir con un día de anticipación, por eso es lo que
@@ -10,46 +10,107 @@ Usamos dos archivos que están en raw/clima:
 - Observado: el clima que hubo de verdad. Sirve solo para ver qué tan bien acierta el
   pronóstico. NO se usa en el modelo, porque el día anterior todavía no se sabe.
 
-Cómo bajarlos (desde el navegador, porque Databricks Free Edition no llega a Open-Meteo):
+Cómo bajarlos (desde el navegador, porque Databricks Free Edition no llega a Open-Meteo).
+El nombre del archivo no importa. Se puede bajar un archivo por año o uno solo con todo.
 
-Pronóstico 2024 y 2025 -> raw/clima/clima_pronostico_2024_2025.csv
+Pronóstico 2024 y 2025
 https://previous-runs-api.open-meteo.com/v1/forecast?latitude=-34.9011&longitude=-56.1645&hourly=temperature_2m_previous_day1,precipitation_previous_day1&start_date=2024-01-01&end_date=2025-12-31&timezone=America%2FMontevideo&models=gfs_global,ecmwf_ifs025,icon_global,gem_global&format=csv
 
-Observado 2024 y 2025 -> raw/clima/clima_observado_2024_2025.csv
+Observado 2024 y 2025
 https://archive-api.open-meteo.com/v1/archive?latitude=-34.9011&longitude=-56.1645&start_date=2024-01-01&end_date=2025-12-31&hourly=temperature_2m,precipitation&timezone=America%2FMontevideo&format=csv
 
-Pronóstico 2026 -> raw/clima/clima_pronostico_2026.csv
+Pronóstico 2026
 https://previous-runs-api.open-meteo.com/v1/forecast?latitude=-34.9011&longitude=-56.1645&hourly=temperature_2m_previous_day1,precipitation_previous_day1&start_date=2026-01-01&end_date=2026-12-31&timezone=America%2FMontevideo&models=gfs_global,ecmwf_ifs025,icon_global,gem_global&format=csv
 
-Observado 2026 -> raw/clima/clima_observado_2026.csv
+Observado 2026
 https://archive-api.open-meteo.com/v1/archive?latitude=-34.9011&longitude=-56.1645&start_date=2026-01-01&end_date=2026-12-31&hourly=temperature_2m,precipitation&timezone=America%2FMontevideo&format=csv
 
 Ojo con 2026: si el año todavía no terminó, Open-Meteo puede dar error con end_date en
 el futuro. En ese caso hay que cambiar end_date por el último día que haya datos de viajes
 (por ejemplo 2026-10-31). El observado además viene con unos días de atraso.
 
-Se leen todos los archivos que empiecen con clima_pronostico_ (y clima_observado_) y se
-juntan. Si dos archivos tienen la misma hora, queda la del último en orden alfabético.
+Se leen todos los archivos de raw/clima, se llamen como se llamen. Cada uno se reconoce
+por sus columnas: si tiene columnas "_previous_day1" es pronóstico, si tiene
+"temperature_2m" y "precipitation" es observado. Si un archivo no es ninguno de los dos
+(por ejemplo, el mensaje de error que da Open-Meteo cuando la fecha está en el futuro),
+se avisa y no se usa. Los archivos del mismo tipo se juntan. Si dos tienen la misma hora,
+queda la que tenga más datos.
 
 Los pronósticos guardados empiezan el 19/01/2024 (GFS, ICON y GEM) y el 03/02/2024 (ECMWF).
 Antes de esa fecha el pronóstico queda vacío. No es un problema, porque esos días igual
 se dejan afuera al entrenar (no tienen los rezagos de 28 días).
 
-Los CSV de Open-Meteo traen 3 líneas de información antes de la tabla de datos.
-Por eso se leen con pandas salteando esas líneas (son archivos chicos).
+Open-Meteo no usa exactamente el punto que le pedimos, usa el punto de su grilla más
+cercano. Por eso el archivo de pronóstico dice 34.85S 56.13W y el de observado 34.90S 56.19W.
+Están a unos pocos kilómetros, así que para Montevideo da lo mismo.
+
+Los CSV de Open-Meteo traen unas líneas de información antes de la tabla de datos.
+Por eso se busca la línea que empieza con "time," y se lee desde ahí con pandas
+(son archivos chicos).
 """
 
 import glob
 import re
+from pathlib import Path
 
 import pandas as pd
 
 UMBRAL_LLUVIA_MM = 0.1   # desde cuántos milímetros en una hora decimos que "llueve"
 
 
+def _primeras_lineas(ruta, n=10):
+    """Devuelve las primeras n líneas de un archivo, como texto."""
+    with open(ruta, encoding="utf-8", errors="replace") as f:
+        return [f.readline() for _ in range(n)]
+
+
+def _fila_encabezado(ruta):
+    """Número de la línea donde empieza la tabla (la que arranca con "time,"). Si no está, None."""
+    for i, linea in enumerate(_primeras_lineas(ruta)):
+        if linea.lstrip("\ufeff").startswith("time,"):
+            return i
+    return None
+
+
+def tipo_de_archivo(ruta):
+    """Dice si un archivo de Open-Meteo es "pronostico", "observado" o None (no se reconoce)."""
+    i = _fila_encabezado(ruta)
+    if i is None:
+        return None
+    columnas = _primeras_lineas(ruta)[i]
+    if "_previous_day1" in columnas:
+        return "pronostico"
+    if "temperature_2m" in columnas and "precipitation" in columnas:
+        return "observado"
+    return None
+
+
+def clasificar_archivos(carpeta):
+    """Mira todos los archivos de la carpeta y los separa en pronóstico y observado.
+
+    Devuelve un diccionario con tres listas: "pronostico", "observado" y "no_reconocido".
+    El nombre de los archivos no importa, se mira lo que tienen adentro.
+    """
+    archivos = sorted(p for p in Path(carpeta).rglob("*")
+                      if p.is_file() and not p.name.startswith("."))
+    grupos = {"pronostico": [], "observado": [], "no_reconocido": []}
+    for p in archivos:
+        grupos[tipo_de_archivo(p) or "no_reconocido"].append(str(p))
+    if not grupos["pronostico"]:
+        raise FileNotFoundError(
+            f"No hay ningún archivo de pronóstico en {carpeta}. "
+            f"Archivos encontrados: {[Path(a).name for a in archivos]}. "
+            "Hay que revisar que se hayan bajado con el enlace de pronóstico de clima.py y en formato CSV."
+        )
+    return grupos
+
+
 def leer_open_meteo(ruta):
     """Lee un CSV de Open-Meteo y le saca las unidades a los nombres de columnas."""
-    df = pd.read_csv(ruta, skiprows=3)
+    i = _fila_encabezado(ruta)
+    if i is None:
+        raise ValueError(f"{ruta} no parece un CSV de Open-Meteo (no tiene la columna 'time')")
+    df = pd.read_csv(ruta, skiprows=i)
     df.columns = [re.sub(r"\s*\(.*\)$", "", c).strip() for c in df.columns]
     df["time"] = pd.to_datetime(df["time"])
     return df
@@ -77,7 +138,10 @@ def leer_varios(rutas):
     """
     partes = [leer_open_meteo(r) for r in _lista_de_archivos(rutas)]
     df = pd.concat(partes, ignore_index=True)
-    return df.drop_duplicates("time", keep="last").sort_values("time").reset_index(drop=True)
+    # Si una hora está en dos archivos, nos quedamos con la fila que tenga más datos
+    df["_datos"] = df.notna().sum(axis=1)
+    df = df.sort_values(["time", "_datos"]).drop_duplicates("time", keep="last")
+    return df.drop(columns="_datos").reset_index(drop=True)
 
 
 def _promedio(df, prefijo):
@@ -96,17 +160,26 @@ def tabla_clima_pandas(ruta_pronostico, ruta_observado=None):
     temp, cols_t = _promedio(p, "temperature_2m_previous_day1")
     lluvia, cols_p = _promedio(p, "precipitation_previous_day1")
 
+    # Un servicio cuenta como disponible en una hora si dio la temperatura y también la lluvia.
+    # Antes mirábamos solo la lluvia, y quedaban unas pocas horas con lluvia pero sin
+    # temperatura (en el EDA la temperatura tenía un poquito más de vacíos que la lluvia).
+    pares = [(c.replace("precipitation_", "temperature_2m_", 1), c) for c in cols_p]
+    pares = [(t, l) for t, l in pares if t in p.columns]
+    if not pares:
+        raise ValueError(f"No encontramos pares de temperatura y lluvia del mismo servicio. Columnas: {list(p.columns)}")
+    disponibles = sum((p[t].notna() & p[l].notna()).astype("int32") for t, l in pares)
+
     out = pd.DataFrame({
         "fecha": p["time"].dt.date,
         "hora": p["time"].dt.hour.astype("int32"),
         "temperatura_pron": temp.round(2),
         "lluvia_pron_mm": lluvia.round(3),
-        "modelos_disponibles": p[cols_p].notna().sum(axis=1).astype("int32"),
+        "modelos_disponibles": disponibles.astype("int32"),
     })
     out["llueve_pron"] = out["lluvia_pron_mm"] >= UMBRAL_LLUVIA_MM
     # Lluvia pronosticada para todo el día. También se conoce el día anterior, igual que el resto.
     out["lluvia_pron_dia_mm"] = out.groupby("fecha")["lluvia_pron_mm"].transform("sum").round(3)
-    # Si ningún servicio tiene dato para esa hora, todo el clima queda vacío
+    # Si ningún servicio dio las dos cosas para esa hora, todo el clima de esa hora queda vacío
     sin_datos = out["modelos_disponibles"] == 0
     out.loc[sin_datos, ["temperatura_pron", "lluvia_pron_mm", "lluvia_pron_dia_mm"]] = None
     out["llueve_pron"] = out["llueve_pron"].where(~sin_datos, None)

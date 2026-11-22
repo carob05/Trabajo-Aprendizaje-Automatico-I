@@ -13,9 +13,10 @@ grupo de días, sin volver a mirar las filas.
 
 Eso nos sirve para dos cosas:
 - separar el error por grupos (por tipo de día, por tamaño de línea)
-- calcular intervalos de confianza sorteando DÍAS (ver bootstrap_dias). Se sortean días y
-  no filas porque las filas de un mismo día se parecen mucho entre sí (mismo clima, mismo
-  feriado). Si sorteáramos filas, el intervalo saldría más angosto de lo que es en realidad.
+- calcular intervalos de confianza sorteando DÍAS o SEMANAS enteras (ver bootstrap_dias).
+  No se sortean filas porque las filas de un mismo día se parecen mucho entre sí (mismo
+  clima, mismo feriado). Si sorteáramos filas, el intervalo saldría más angosto de lo que
+  es en realidad. Lo mismo pasa, un poco menos, con los días de una misma semana.
 
 Las funciones marcadas con [Spark] reciben tablas de Spark. Las demás usan pandas y numpy,
 y se pueden probar fuera de Databricks.
@@ -107,8 +108,8 @@ def agregar_mejora(tabla, referencia, por=()):
     return t.drop(columns="_mae_ref")
 
 
-def bootstrap_dias(est, referencia, n_rep=1000, nivel=0.95, seed=42):
-    """Intervalos de confianza del 95 % sorteando días (bootstrap).
+def bootstrap_dias(est, referencia, n_rep=1000, nivel=0.95, seed=42, bloque=1):
+    """Intervalos de confianza del 95 % sorteando días o semanas (bootstrap).
 
     Cómo funciona:
     1. Tenemos, por ejemplo, 365 días de validación.
@@ -119,6 +120,11 @@ def bootstrap_dias(est, referencia, n_rep=1000, nivel=0.95, seed=42):
 
     Si el intervalo es angosto, el resultado no depende mucho de qué días tocaron.
 
+    Con bloque=7 no se sortean días sueltos sino tandas de 7 días seguidos. Los días de una
+    misma semana se parecen (las mismas vacaciones, a veces la misma ola de frío o de lluvia),
+    y si los sorteamos sueltos el intervalo queda un poco más angosto de lo que debería.
+    Con bloque=1 es el bootstrap de días común.
+
     Se usan los MISMOS días sorteados para todos los modelos. Así, si un día es difícil,
     es difícil para todos, y la comparación entre modelos es más justa.
 
@@ -126,10 +132,15 @@ def bootstrap_dias(est, referencia, n_rep=1000, nivel=0.95, seed=42):
     """
     por_dia = est.groupby(["modelo", "fecha"])[ESTADISTICOS].sum().reset_index()
     dias = np.sort(por_dia["fecha"].unique())
+    # Cada día pertenece a una tanda: los primeros 'bloque' días a la 0, los siguientes a la 1...
+    tanda = np.arange(len(dias)) // bloque
+    n_tandas = int(tanda.max()) + 1
     rng = np.random.default_rng(seed)
-    muestras = rng.integers(0, len(dias), size=(n_rep, len(dias)))
-    # pesos dice cuántas veces salió cada día en cada sorteo (una fila por sorteo)
-    pesos = np.stack([np.bincount(f, minlength=len(dias)) for f in muestras])
+    muestras = rng.integers(0, n_tandas, size=(n_rep, n_tandas))
+    # pesos dice cuántas veces salió cada día en cada sorteo (una fila por sorteo).
+    # Un día sale tantas veces como salió su tanda.
+    veces_tanda = np.stack([np.bincount(f, minlength=n_tandas) for f in muestras])
+    pesos = veces_tanda[:, tanda]
 
     reps = {}
     for modelo, g in por_dia.groupby("modelo"):
