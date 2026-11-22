@@ -1,4 +1,4 @@
-"""Modelo del notebook 06: regresión lineal Ridge.
+"""Modelos: regresión lineal Ridge (notebooks 06 y 07) y árboles con boosting (notebook 07).
 
 Todo se hace con pandas y scikit-learn. Train y val entran en la memoria
 (más o menos un millón de filas cada uno), así que no hace falta Spark para entrenar.
@@ -26,7 +26,9 @@ import time
 
 import numpy as np
 import pandas as pd
+from sklearn.base import BaseEstimator, RegressorMixin, TransformerMixin, clone
 from sklearn.compose import ColumnTransformer, TransformedTargetRegressor
+from sklearn.ensemble import HistGradientBoostingRegressor
 from sklearn.linear_model import Ridge
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
@@ -88,8 +90,8 @@ def columnas_a_leer(columnas_gold):
 def categorias_desde(train):
     """Lista de valores posibles de linea, tipo_dia, tipo_dia_ayer y tipo_linea, sacada SOLO de train.
 
-    Si en val aparece una línea que no estaba en train, queda vacía. La regresión no usa
-    la línea, así que no le afecta.
+    Si en val aparece una línea que no estaba en train, queda vacía. Los árboles la tratan
+    como "desconocida" y la regresión no usa la línea, así que no le afecta.
     """
     return {c: sorted(train[c].dropna().astype(str).unique()) for c in CATEGORICAS}
 
@@ -160,6 +162,46 @@ def _exp_recortada(z):
     return np.clip(np.expm1(z), 0, None)
 
 
+class SelectorColumnas(BaseEstimator, TransformerMixin):
+    """Paso de un pipeline que se queda solo con algunas columnas (sin cambiarles el tipo)."""
+
+    def __init__(self, columnas):
+        self.columnas = columnas
+
+    def fit(self, X, y=None):
+        return self
+
+    def transform(self, X):
+        return X[list(self.columnas)]
+
+
+class SobreReferencia(BaseEstimator, RegressorMixin):
+    """Modelo que aprende cuánto corregir la mediana de 4 semanas.
+
+    En vez de aprender "cuántos pasajeros hay", aprende "cuántos pasajeros de más o de
+    menos hay respecto de la mediana" (eso se llama residual).
+    Predicción final = mediana + corrección. Si da negativo, se pone 0.
+    """
+
+    def __init__(self, estimador, referencia=REFERENCIA):
+        self.estimador = estimador
+        self.referencia = referencia
+
+    def fit(self, X, y):
+        residual = np.asarray(y, dtype=float) - X[self.referencia].to_numpy(float)
+        self.estimador_ = clone(self.estimador).fit(X, residual)
+        return self
+
+    def predict(self, X):
+        return np.clip(X[self.referencia].to_numpy(float) + self.estimador_.predict(X), 0, None)
+
+
+def columnas_arbol(columnas):
+    """Columnas que usan los modelos de árboles."""
+    base = ["hora", "dia_semana", "linea", "tipo_dia", "tipo_linea", *REZAGOS, *CLIMA]
+    return base + [c for c in BANDERAS if c in columnas]
+
+
 def _lineal(columnas, alfa, interacciones):
     """Regresión Ridge que predice log(1 + pasajeros).
 
@@ -190,14 +232,52 @@ def _lineal(columnas, alfa, interacciones):
                                       check_inverse=False)
 
 
-def crear_modelo(columnas, familia, **params):
-    """Crea una regresión nueva, todavía sin entrenar.
+def _arbol(columnas, familia, hojas, iteraciones, tasa, semilla):
+    """Boosting de árboles (HistGradientBoosting de scikit-learn).
 
-    La única familia es 'lineal' (Ridge). Necesita alfa e interacciones.
+    Boosting quiere decir que se entrenan muchos árboles chicos, uno después del otro,
+    y cada árbol nuevo trata de corregir los errores que dejaron los anteriores.
+
+    Tres versiones (familias):
+    poisson:  predice los pasajeros directo, con un error pensado para conteos (0, 1, 2, ...).
+    log:      predice log(1 + pasajeros), igual que el modelo lineal.
+    residual: predice la corrección sobre la mediana de 4 semanas, con error absoluto.
+
+    No se usa early_stopping, porque separa una parte de train al azar para controlar
+    y mezclaría días del futuro con días del pasado.
     """
-    if familia != "lineal":
-        raise ValueError(f"Familia de modelo desconocida: {familia}. Solo hay 'lineal'.")
-    return _lineal(columnas, params["alfa"], params["interacciones"])
+    cols = columnas_arbol(columnas)
+
+    def hgb(loss):
+        return Pipeline([
+            ("sel", SelectorColumnas(cols)),
+            ("hgb", HistGradientBoostingRegressor(
+                loss=loss, categorical_features="from_dtype", max_leaf_nodes=hojas,
+                min_samples_leaf=100, learning_rate=tasa, max_iter=iteraciones,
+                early_stopping=False, random_state=semilla)),
+        ])
+
+    if familia == "poisson":
+        return hgb("poisson")
+    if familia == "log":
+        return TransformedTargetRegressor(regressor=hgb("squared_error"), func=np.log1p,
+                                          inverse_func=_exp_recortada, check_inverse=False)
+    if familia == "residual":
+        return SobreReferencia(hgb("absolute_error"))
+    raise ValueError(f"Familia de árbol desconocida: {familia}")
+
+
+def crear_modelo(columnas, familia, **params):
+    """Crea un modelo nuevo, todavía sin entrenar.
+
+    familia 'lineal' (Ridge): necesita alfa e interacciones.
+    familia 'poisson', 'log' o 'residual' (árboles): necesita hojas, y opcionalmente
+    iteraciones=200, tasa=0.1, semilla=42.
+    """
+    if familia == "lineal":
+        return _lineal(columnas, params["alfa"], params["interacciones"])
+    return _arbol(columnas, familia, params["hojas"], params.get("iteraciones", 200),
+                  params.get("tasa", 0.1), params.get("semilla", 42))
 
 
 def ajustar_y_predecir(modelo, train, val):
