@@ -6,6 +6,7 @@ Pasos:
 3. grilla:            arma todas las combinaciones línea x día x hora, con 0 donde nadie subió
 4. agregar_rezagos:   agrega cuántos pasajeros hubo en días anteriores
 5. linea_en_marcha:   marca las filas de una línea que todavía no había arrancado
+   (además empresa_por_linea y marcar_paros_empresa, para los paros de una sola empresa)
 6. asignar_particion: marca cada fila como train, val o test según la fecha
 """
 
@@ -162,6 +163,35 @@ def tipo_linea(df):
     """Agrega 'tipo_linea': las letras del principio del nombre ('L4' da 'L'). Si es solo número, 'NUM'."""
     prefijo = F.regexp_extract(F.upper(F.col("linea")), r"^([A-Z]+)", 1)
     return df.withColumn("tipo_linea", F.when(prefijo == "", "NUM").otherwise(prefijo))
+
+
+def empresa_por_linea(silver):
+    """La empresa de cada línea: la que aparece en más viajes de esa línea.
+
+    Casi todas las líneas son de una sola empresa. Se toma la más común por si algún
+    viaje viene con otra (por ejemplo, un ómnibus prestado).
+    """
+    conteo = (silver.groupBy(F.col("dsc_linea").alias("linea"), "descrip_empresa")
+              .agg(F.count("*").alias("_n")))
+    w = Window.partitionBy("linea").orderBy(F.desc("_n"), "descrip_empresa")
+    return (conteo.withColumn("_puesto", F.row_number().over(w))
+            .where(F.col("_puesto") == 1)
+            .select("linea", F.upper(F.trim("descrip_empresa")).alias("empresa")))
+
+
+def marcar_paros_empresa(df, paros_empresa):
+    """Pone es_paro en verdadero en las filas de las líneas cuya empresa paró ese día.
+
+    paros_empresa es calendario.PAROS_EMPRESA (fecha -> empresas). Se compara si el nombre
+    de la empresa del paro aparece dentro de la columna 'empresa'.
+    """
+    marca = F.lit(False)
+    for d, empresas in paros_empresa.items():
+        en_empresa = F.lit(False)
+        for e in empresas:
+            en_empresa = en_empresa | F.coalesce(F.col("empresa").contains(e.upper()), F.lit(False))
+        marca = marca | ((F.col("fecha") == F.lit(d)) & en_empresa)
+    return df.withColumn("es_paro", F.col("es_paro") | marca)
 
 
 def linea_en_marcha(df, agregado, fecha_inicio, dias=28, margen=7):

@@ -36,6 +36,17 @@ error en validación (notebook 06) y lo buscamos en las noticias (Montevideo Por
 Prensa Latina, 31/07/2025). Ese paro se anunció varios días antes, así que la noche
 anterior ya se sabía y se puede usar como variable.
 
+También hubo paros de una sola empresa. Esos no se notan en todo el sistema, solo en las
+líneas de esa empresa, así que se marcan por empresa (PAROS_EMPRESA):
+- UCOT, 27/05/2024 desde las 12:00 hasta el 28/05/2024 a las 13:00, por la sanción a
+  trabajadores (Montevideo Portal, 28/05/2024).
+- UCOT y Coetc, viernes 24/04/2026, después de la golpiza a un chofer de UCOT la noche
+  anterior. UCOT paró las 24 horas y Coetc desde el mediodía (Subrayado y Radio Monte
+  Carlo, 24/04/2026). Se decidió esa misma noche, así que es el caso más justo en cuanto
+  a si se sabía de antemano.
+El paro general de la Unott anunciado para el 24/05/2024 se levantó el día antes y no se
+hizo. Los paros de una sola línea no se marcan, porque son muchos y casi no mueven el total.
+
 Para agregar otro año, hay que completar las listas de abajo con las fechas oficiales.
 """
 
@@ -100,10 +111,28 @@ ELECCIONES = {
     date(2025, 5, 11): "Elecciones departamentales",
 }
 
-# Paros de transporte que se notaron en los datos (ver arriba).
+# Paros de transporte de todo el sistema (ver arriba).
 PAROS = {
     date(2025, 7, 31): "Paro de transporte (Unott)",
 }
+
+# Paros de una sola empresa: fecha -> empresas que pararon. El nombre de la empresa tiene que
+# aparecer dentro de 'descrip_empresa' de los datos (se compara en mayúsculas).
+PAROS_EMPRESA = {
+    date(2024, 5, 27): ("UCOT",),
+    date(2024, 5, 28): ("UCOT",),
+    date(2026, 4, 24): ("UCOT", "COETC"),
+}
+
+
+def hay_paro(d, empresa=None):
+    """Verdadero si ese día hubo paro de todo el sistema, o de la empresa de esa línea."""
+    if d in PAROS:
+        return True
+    if empresa is None:
+        return False
+    empresa = str(empresa).upper()
+    return any(e in empresa for e in PAROS_EMPRESA.get(d, ()))
 
 # Fiestas de fin de año: del 24 al 31 de diciembre. Solo el 25 es feriado, pero en toda esa
 # semana la gente viaja distinto que de costumbre (en el EDA el 24 y el 31 tienen menos de
@@ -191,16 +220,17 @@ def _dias(inicio, fin):
 DIAS_TURISMO = {d for a, b in TURISMO for d in _dias(a, b)}
 
 
-def categoria_dia(d):
-    """Qué clase de día especial es la fecha, o None si es un día común.
+def categoria_dia(d, empresa=None):
+    """Qué clase de día especial es la fecha para una línea de esa empresa, o None si es común.
 
-    Sirve para saber si un rezago apunta a un día raro (ver modelos.preparar). Si un día
-    entra en dos categorías, vale la primera de esta lista: sin servicio, paro,
+    Sirve para saber si un rezago apunta a un día raro (ver modelos.corregir_rezagos). Si un
+    día entra en dos categorías, vale la primera de esta lista: sin servicio, paro,
     no laborable, Carnaval, Turismo, elección, feriado laborable y semana de fiestas.
+    Un paro de una sola empresa solo cuenta para las líneas de esa empresa.
     """
     if d in SIN_SERVICIO:
         return "sin_servicio"
-    if d in PAROS:
+    if hay_paro(d, empresa):
         return "paro"
     if d in NO_LABORABLES:
         return "no_laborable"
@@ -236,7 +266,7 @@ def filas_calendario(inicio, fin):
             "es_turismo": d in turismo,
             "es_eleccion": d in ELECCIONES,
             "es_dia_sin_servicio": d in SIN_SERVICIO,
-            "es_paro": d in PAROS,
+            "es_paro": d in PAROS,   # los paros de una empresa se agregan en gold.marcar_paros_empresa
             "es_vispera_navidad": (d.month, d.day) == (12, 24),
             "es_fin_de_anio": (d.month, d.day) == (12, 31),
             "es_semana_fiestas": es_semana_fiestas(d),

@@ -81,7 +81,7 @@ OBLIGATORIAS = [
     "linea", "fecha", "hora", "dia_semana", "tipo_dia", "tipo_dia_ayer", "tipo_linea", OBJETIVO,
     *REZAGOS, *CLIMA,
 ]
-OPCIONALES = [*BANDERAS, "nombre_dia_especial"]
+OPCIONALES = [*BANDERAS, "nombre_dia_especial", "empresa"]
 
 
 # ---------------------------------------------------------------------------
@@ -120,6 +120,21 @@ def _por_fecha(fechas, funcion):
     return dias.map(dict(zip(unicos, (funcion(d) for d in unicos))))
 
 
+def _por_dia_y_empresa(df, funcion):
+    """Como _por_fecha, pero 'funcion' recibe la fecha y la empresa de la línea.
+
+    Hace falta para los paros de una sola empresa. Si gold no tiene la columna 'empresa',
+    se pasa None y solo cuentan los paros de todo el sistema.
+    """
+    dias = df["fecha"].dt.date
+    if "empresa" not in df.columns:
+        return _por_fecha(df["fecha"], lambda d: funcion(d, None))
+    pares = pd.MultiIndex.from_arrays([dias, df["empresa"].astype(object)])
+    unicos = pares.unique()
+    valores = {p: funcion(p[0], None if pd.isna(p[1]) else p[1]) for p in unicos}
+    return pd.Series([valores[p] for p in pares], index=df.index)
+
+
 def corregir_rezagos(df):
     """Arma la mediana limpia y cambia por ella los rezagos que caen en un día raro.
 
@@ -130,6 +145,8 @@ def corregir_rezagos(df):
       Turismo. Son raros.
     - Martes de Carnaval: el rezago de 1 día es el lunes de Carnaval. Es la misma clase
       de día, así que se deja.
+    - 8 de mayo de 2026, línea de UCOT: el rezago de 14 días es el paro de UCOT del 24/04.
+      Es raro. Para una línea de Cutcsa ese día fue normal, así que se deja.
 
     Pasos:
     1. La mediana limpia (MEDIANA_LIMPIA) es la mediana de los rezagos de 7, 14, 21 y 28
@@ -144,10 +161,11 @@ def corregir_rezagos(df):
     que en el 05. Todo sale del calendario y de días pasados, así que se sabe la noche anterior.
     Devuelve la tabla y cuántas filas se cambiaron de cada rezago.
     """
-    hoy = _por_fecha(df["fecha"], calendario.categoria_dia).fillna("")
+    hoy = _por_dia_y_empresa(df, calendario.categoria_dia).fillna("")
     raros = {}
     for k, col in REZAGOS_A_CORREGIR:
-        antes = _por_fecha(df["fecha"], lambda d, k=k: calendario.categoria_dia(d - timedelta(days=k))).fillna("")
+        antes = _por_dia_y_empresa(
+            df, lambda d, e, k=k: calendario.categoria_dia(d - timedelta(days=k), e)).fillna("")
         raros[col] = ((antes != "") & (antes != hoy)).to_numpy()
 
     semanas = np.column_stack([np.where(raros[c], np.nan, df[c].to_numpy(float)) for _, c in SEMANALES])
