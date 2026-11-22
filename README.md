@@ -13,6 +13,7 @@ Queremos predecir **cuántas personas van a subir a cada línea de ómnibus de M
 | `04_eda` | Mira los datos de train para entenderlos antes de modelar | Nada (solo gráficos y conclusiones) |
 | `05_baseline` | Prueba reglas simples para saber qué error hay que superar | `resultados_modelos` (etapa baseline) |
 | `06_modelo` | Regresión Ridge: aprende con 2024, se elige con 2025 y se prueba una vez en 2026 | `resultados_modelos` (etapas modelo y test) |
+| `07_comparacion_validacion` | Compara las dos formas de elegir el modelo (opción 1 y opción 2) con el mismo test. Solo lee gold | `comparacion_validacion` (etapas validacion y test) |
 
 ## Cómo se dividen los datos
 
@@ -23,6 +24,13 @@ Un año entero para cada cosa (las fechas están en `config.py`):
 | train | todo 2024 | El modelo aprende |
 | val | todo 2025 | Elegimos el mejor modelo |
 | test | 2026, hasta donde haya datos | Lo probamos una sola vez, al final |
+
+Comparamos dos formas de usar 2025 para elegir el modelo (`config.OPCIONES_VALIDACION`, notebook 07). Las dos se vuelven a entrenar con 2024 y 2025 y se prueban una vez en 2026:
+
+| Opción | Cómo se valida 2025 |
+|---|---|
+| 1. Holdout de un año | Un solo modelo entrenado con 2024 predice todo 2025 (la división de arriba, la del notebook 06) |
+| 2. Validación cruzada temporal | Cada trimestre de 2025 lo predice un modelo entrenado con todo lo anterior: 2024, después 2024 + T1, y así |
 
 ## Cómo subir los datos
 
