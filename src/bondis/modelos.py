@@ -471,7 +471,7 @@ def importancia_por_grupos(modelo, muestra, grupos, n_rep=3, seed=42):
     como pasa con los rezagos y el promedio de 4 semanas).
     Las columnas de un mismo grupo se mezclan todas de la misma forma.
 
-    Ojo al leerlo: al mezclar los rezagos, a una línea chica le tocan los pasajeros de una
+    Al leerlo hay que tener en cuenta que, al mezclar los rezagos, a una línea chica le tocan los pasajeros de una
     grande y la predicción se rompe por completo. Por eso ese grupo siempre da enorme. Y un
     grupo que el modelo casi no usa da cerca de 0. Por ejemplo, la regresión no usa la
     línea, solo tipo_linea, porque el nivel de cada línea ya viene en los rezagos.

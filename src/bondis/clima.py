@@ -28,7 +28,7 @@ https://previous-runs-api.open-meteo.com/v1/forecast?latitude=-34.9011&longitude
 Observado 2026
 https://archive-api.open-meteo.com/v1/archive?latitude=-34.9011&longitude=-56.1645&start_date=2026-01-01&end_date=2026-12-31&hourly=temperature_2m,precipitation&timezone=America%2FMontevideo&format=csv
 
-Ojo con 2026: si el año todavía no terminó, Open-Meteo puede dar error con end_date en
+Para 2026, si el año todavía no terminó, Open-Meteo puede dar error con end_date en
 el futuro. En ese caso hay que cambiar end_date por el último día que haya datos de viajes
 (por ejemplo 2026-10-31). El observado además viene con unos días de atraso.
 
