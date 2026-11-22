@@ -1,13 +1,7 @@
 # ¿Se puede anticipar cuántos pasajeros suben a cada ómnibus de Montevideo? Y, sobre todo, ¿cómo saberlo sin engañarse?
 
 **Aprendizaje Automático I — Proyecto final — Grupo 2**
-[COMPLETAR: integrantes]
-
-> **Borrador.** Lo que está entre `[COMPLETAR: ...]` depende de los resultados de Databricks
-> (notebooks 03 a 07) o de una decisión del grupo. Los números que ya aparecen salen de corridas
-> anteriores y están marcados con `[VERIFICAR]` cuando hay que confirmarlos con el gold nuevo.
-> Límite: 6 páginas. Este borrador está pensado para que la sección 3 (la división de los datos)
-> ocupe la mayor parte.
+Marco Ariano, Carolina Bonifacino, Valentina Penén, Felipe Yelpo
 
 ---
 
@@ -27,28 +21,39 @@ La demanda de ómnibus en Montevideo cambia según la hora, el día, el clima y 
 
 | Fuente | Qué usamos |
 |---|---|
-| Viajes del STM (Intendencia de Montevideo, datos abiertos): una fila por subida | Pasajeros por línea, día y hora; pasajeros de días anteriores |
-| Calendario armado por nosotros (feriados, Carnaval, Turismo, elecciones, fin de año, clases de ANEP) | Qué tipo de día es y si hay clases |
+| Viajes del STM (Intendencia de Montevideo, datos abiertos): una fila por validación | Pasajeros por línea, día y hora; pasajeros de días anteriores |
+| Calendario armado por nosotros (feriados, Carnaval, Turismo, elecciones, fin de año, clases de ANEP) | Qué tipo de día es hoy y qué tipo de día fue ayer; si hay clases |
 | Open-Meteo, pronósticos guardados ("previous runs"): lo que pronosticaban 4 servicios del tiempo 24 horas antes | Lluvia y temperatura por hora |
 
-**Período.** De enero de 2024 a octubre de 2026 (el último mes publicado). [COMPLETAR: confirmar último mes]
+**Período.** De enero de 2024 a octubre de 2026 (34 meses, 1035 días; octubre de 2026 es el último mes publicado). En ese período subieron **848 millones de pasajeros**.
 
-**Procesamiento.** Usamos Spark en Databricks con tres capas: *bronze* (los archivos tal cual), *silver* (tipos correctos, sin filas inválidas ni repetidas; unos 580 millones de viajes [VERIFICAR con 2026]) y *gold* (la tabla del modelo). Cada fila de gold es **una línea, un día y una hora**. Armamos la grilla completa línea × día × hora y pusimos 0 donde nadie subió, porque "0 pasajeros a las 3 de la mañana" es un dato y no un faltante. Controlamos que la suma de pasajeros de gold coincida exactamente con la de silver.
+**Procesamiento.** Usamos Spark en Databricks con tres capas: *bronze* (los archivos tal cual), *silver* (tipos correctos, sin filas inválidas ni repetidas) y *gold* (la tabla del modelo). La limpieza casi no descartó nada: no hubo fechas, pasajeros ni líneas inválidas, y las filas repetidas fueron unas pocas miles entre más de 600 millones (menos del 0,01 %). Cada fila de gold es **una línea, un día y una hora**: 136 líneas × 1035 días × 24 horas = 3.378.240 filas. Armamos la grilla completa y pusimos 0 donde nadie subió, porque "0 pasajeros a las 3 de la mañana" es un dato y no un faltante. Comprobamos que la suma de pasajeros de gold coincide exactamente con la de silver para las líneas incluidas.
 
 **Variables.** Todas se conocen la noche anterior:
 - *Rezagos*: pasajeros de la misma línea y hora 1, 7, 14, 21 y 28 días antes; el promedio y la mediana de esas cuatro semanas; el total de la línea el día anterior.
-- *Calendario*: día de la semana, tipo de día (hábil, sábado, domingo, Turismo, feriado), feriados, Carnaval, elecciones, días de fin de año y si hay clases en primaria y en media.
-- *Clima*: el **pronóstico** hecho 24 horas antes (promedio de GFS, ECMWF, ICON y GEM), no el clima observado, que el día anterior todavía no existe.
+- *Calendario*: día de la semana, tipo de día (hábil, sábado, domingo, Turismo, feriado), **tipo de día de ayer**, feriados, Carnaval, elecciones, días de fin de año y si hay clases en primaria y en media. El calendario se sabe de antemano, así que usar el de ayer o el de hoy no es hacer trampa.
+- *Clima*: el **pronóstico** hecho 24 horas antes (promedio de GFS, ECMWF, ICON y GEM), no el clima observado, que el día anterior todavía no existe. El pronóstico está disponible desde el 19/01/2024 (98,2 % de las horas del período) y erra la temperatura por 1,65 °C en promedio. Pronosticó lluvia en el 12,6 % de las horas y llovió en el 12,2 %.
 
-**Líneas.** Entran las líneas urbanas que funcionaron al menos 100 días en 2024 y en 2025: [COMPLETAR: N] líneas, que llevan el [COMPLETAR: %] de los pasajeros. Para elegirlas **no se mira 2026**: si exigiéramos que una línea funcione también en el año de test, estaríamos usando el test para decidir qué entra al modelo.
+**Líneas.** Entran las 136 líneas urbanas que funcionaron al menos 100 días en 2024 y en 2025, y llevan el 99,5 % de los pasajeros (quedan afuera 11 líneas, con el 0,5 %). Para elegirlas **no se mira 2026**: si exigiéramos que una línea funcione también en el año de test, estaríamos usando el test para decidir qué entra al modelo. Además, en los días en que una línea todavía no había arrancado, la grilla le pone 0 pasajeros, pero ese 0 no es real; esos días y el primer mes después de arrancar (cuando los rezagos miran días sin servicio) no se usan para entrenar ni para medir.
 
-**Qué vimos en el análisis exploratorio** (solo con train) [VERIFICAR: estos números son de la primera corrida, con train de enero a setiembre de 2024]:
-- Los pasajeros por hora tienen una cola larga: media 251, mediana 67 y un 24 % de horas con 0. Por eso algunos modelos predicen log(1 + pasajeros).
+**Filas que usan los modelos.** Solo las *completas*: con todos los rezagos, con pronóstico y con la línea ya en marcha. Las primeras semanas de 2024 no tienen rezago de 28 días ni pronóstico, así que las filas completas empiezan el 29/01/2024.
+
+| Año | Filas | Filas completas |
+|---|---|---|
+| 2024 | 1.194.624 | 1.097.424 (91,9 %) |
+| 2025 | 1.191.360 | 1.191.360 (100 %) |
+| 2026 (enero a octubre) | 992.256 | 992.256 (100 %) |
+
+**Qué vimos en el análisis exploratorio** (solo con 2024, el entrenamiento):
+- Los pasajeros por hora tienen una cola larga: media 256, mediana 69, asimetría 2,0 y un 24 % de horas con 0. Por eso algunos modelos predicen log(1 + pasajeros).
 - La forma del día cambia según el tipo de día: un día hábil tiene un pico a las 7 y 8, baja a las 10 y se mantiene alto de 12 a 18; un sábado tiene una sola loma al mediodía; un domingo es bajo y parejo. La hora y el tipo de día **interactúan**.
-- Con clases viaja un 25 % más de gente; con lluvia pronosticada de 5 a 20 mm, un 15 % menos que en un día seco.
-- La mediana de las 4 semanas anteriores tiene una correlación de 0,97 con los pasajeros. La demanda se repite muchísimo de una semana a otra.
+- La demanda está concentrada: las 20 líneas más grandes llevan el 42 % de los pasajeros y las 50 más grandes el 80 %.
+- Un día hábil con clases en primaria y media lleva en promedio 1.054.000 pasajeros, contra 848.000 sin clases (un 24 % más). Los dos feriados laborables que cayeron en día hábil tuvieron un 37 % menos que un hábil común. Los tres domingos de elecciones tuvieron un 65 % más que un domingo común, porque esos días los ómnibus andan con la flota de un día hábil.
+- Comparando cada día hábil con la mediana de sus 4 semanas anteriores, con lluvia pronosticada de 5 a 20 mm viajó un 14 % menos que en un día seco. La temperatura no se puede separar de otros efectos (la vuelta de vacaciones coincide con el calor).
+- La mediana de las 4 semanas anteriores tiene una correlación de 0,97 con los pasajeros. **La demanda se repite muchísimo de una semana a otra.**
+- El rezago de 1 día engaña en los cambios de tipo de día: un lunes lleva 2,5 veces los pasajeros del domingo anterior, pero casi exactamente lo mismo que la mediana de sus 4 lunes anteriores (cociente 1,00). Por eso la regresión usa el rezago de 1 día solo cuando ayer fue el mismo tipo de día que hoy.
 
-**Limitaciones de los datos.** Solo se registra quién subió, no quién se quedó esperando porque el ómnibus venía lleno. No tenemos datos de paros. No incluimos líneas suburbanas ni el calendario de UdelaR.
+**Limitaciones de los datos.** Solo se registra quién subió, no quién se quedó esperando porque el ómnibus venía lleno. No hay una variable de paros: revisamos los paros generales del período (29/10/2025, 10/06/2026 y 11/08/2026) y en ninguno pararon los ómnibus, y no apareció ningún día hábil bajo que el calendario no explique. No incluimos líneas suburbanas ni el calendario de UdelaR.
 
 ---
 
@@ -56,7 +61,7 @@ La demanda de ómnibus en Montevideo cambia según la hora, el día, el clima y 
 
 ### 3.1 Por qué no al azar
 
-Las filas no son independientes: las de un mismo día comparten clima, feriado y nivel general de demanda, y los rezagos de un día son los pasajeros de días anteriores. Si mezcláramos días al azar entre entrenamiento y test, el modelo vería "el futuro" de los días que tiene que predecir y el error saldría artificialmente bajo. Por eso toda división es **por fecha**: se entrena con el pasado y se evalúa con lo que viene después. Por la misma razón, los intervalos de confianza los calculamos con **bootstrap por días** (sorteando días enteros, no filas).
+Las filas no son independientes: las de un mismo día comparten clima, feriado y nivel general de demanda, y los rezagos de un día son los pasajeros de días anteriores. Si mezcláramos días al azar entre entrenamiento y test, el modelo vería "el futuro" de los días que tiene que predecir y el error saldría artificialmente bajo. Por eso toda división es **por fecha**: se entrena con el pasado y se evalúa con lo que viene después. Por la misma razón, los intervalos de confianza los calculamos con **bootstrap por bloques de tiempo**, sorteando días o semanas enteras y nunca filas sueltas.
 
 ### 3.2 Cuidados contra la fuga de información
 
@@ -65,13 +70,14 @@ Las filas no son independientes: las de un mismo día comparten clima, feriado y
 | Usar datos del mismo día que se predice | Los rezagos solo miran días anteriores; se excluye la columna de validaciones del día |
 | Usar el clima que hubo de verdad | Se usa el pronóstico hecho 24 h antes |
 | Elegir líneas mirando el test | La selección de líneas usa solo 2024 y 2025 |
+| Tratar como dato los 0 de una línea que todavía no existía | Esos días, y el primer mes de la línea, no se usan |
 | Calcular cosas con datos de validación o test | Categorías, tamaño de línea y perfiles históricos se calculan solo con el train de cada caso |
 | *Early stopping* de los árboles | Desactivado: separa una parte de train al azar y mezclaría pasado y futuro |
 | Mirar el test varias veces | El test se corre una sola vez, después de dejar anotada la elección |
 
 ### 3.3 La división de la propuesta y por qué la descartamos
 
-En la propuesta planteamos entrenar con enero a setiembre de 2024, validar con octubre a diciembre de 2024 y probar en 2025. Al probar las reglas simples con esa división encontramos su problema: **el entrenamiento no tenía ningún diciembre**. En esa validación, los días de fiestas de fin de año y las dos elecciones (8 de 92 días) juntaban el 30,6 % del error de la mejor regla; sin esos días el error bajaba de 37,5 a unos 28,5 pasajeros por hora. Un modelo entrenado sin diciembre no puede aprender las fiestas, y una validación de tres meses depende mucho de qué días especiales le tocan.
+En la propuesta planteamos entrenar con enero a setiembre de 2024, validar con octubre a diciembre de 2024 y probar en 2025. Al probar las reglas simples con esa división encontramos su problema: **el entrenamiento no tenía ningún diciembre**. En esa validación, los días de fiestas de fin de año y las dos elecciones (8 de 92 días) juntaban el 30,6 % del error de la mejor regla; sin esos días el error bajaba de 37,5 a unos 28,5 pasajeros por hora [hay que verificar con los ultimos cambioss]. Un modelo entrenado sin diciembre no puede aprender las fiestas, y una validación de tres meses depende mucho de qué días especiales le tocan.
 
 ### 3.4 Las dos opciones que comparamos
 
@@ -96,7 +102,7 @@ Opción 2    [ train       ]  [ val ]
 Final       [ train ................................................] [ test ]
 ```
 
-[COMPLETAR: reemplazar el diagrama por una figura]
+[para informe pdf poner una figura]
 
 La opción 2 es una validación cruzada para series de tiempo con origen móvil y ventana creciente (Tashman, 2000; Hyndman y Athanasopoulos, 2021, sección "Time series cross-validation"). A diferencia de la validación cruzada k-fold común, nunca usa el futuro para predecir el pasado (Bergmeir y Benítez, 2012).
 
@@ -106,7 +112,7 @@ La opción 2 es una validación cruzada para series de tiempo con origen móvil 
 1. Si eligen el mismo modelo.
 2. El error en test del modelo que elige cada una, y la diferencia entre ambos con su intervalo.
 3. **Optimismo**: cuánto creció el error al pasar de validación a test, dividido lo que creció el error de la mediana de 4 semanas. La mediana no aprende nada, así que su cambio refleja solo que 2026 es distinto de 2025. Un optimismo mayor que 1 quiere decir que la validación prometió menos error del que el modelo dio.
-4. Si el **orden** de los candidatos en validación se mantiene en test (correlación de Spearman). Este análisis se hace después de congelar la elección y no la modifica.
+4. Si el **orden** de los candidatos en validación se mantiene en test (correlación de Spearman). Este análisis se hace después de congelar la elección y no la modifica. Algunas regresiones son casi iguales entre sí y pueden cambiar de puesto por centésimas, así que lo leemos junto con la tabla de puestos.
 
 ---
 
@@ -118,18 +124,16 @@ La opción 2 es una validación cruzada para series de tiempo con origen móvil 
 - *Regla por tipo de día*: el perfil histórico en feriados y la mediana el resto de los días.
 
 **Candidatos que aprenden** (scikit-learn):
-- *Regresión Ridge* sobre log(1 + pasajeros), con 4 valores de penalización (α = 0,1; 1; 10; 100), con y sin la interacción hora × tipo de día. Usa solo cuatro rezagos (mediana, 1 día, 7 días y total del día anterior), porque los demás tienen correlaciones de 0,95 a 1 entre sí. Son 8 candidatos.
+- *Regresión Ridge* sobre log(1 + pasajeros). Usa cuatro rezagos en logaritmo (mediana de 4 semanas, 1 día, 7 días y total del día anterior), porque los demás tienen correlaciones de 0,95 a 1 entre sí; el rezago de 1 día solo cuando ayer fue el mismo tipo de día; el cambio de tipo de día de ayer a hoy (por ejemplo "domingo a hábil"); el calendario; la temperatura y la lluvia pronosticadas (la lluvia en logaritmo, para que una tormenta no pese decenas de veces más que una llovizna); y la hora, el tipo de día y el tipo de línea como categorías. Probamos cinco penalizaciones (α = 1; 10³; 10⁴; 10⁵; 10⁶), con y sin la interacción hora × tipo de día: 10 candidatos. Los α son grandes porque Ridge compara el castigo contra el error sumado de cerca de un millón de filas; con α entre 0,1 y 100 todos los modelos daban lo mismo.
 - *Árboles con boosting* (HistGradientBoosting, 63 hojas, 200 iteraciones), en tres versiones: con pérdida de Poisson (pensada para conteos), sobre log(1 + pasajeros), y **residual**, que aprende cuánto corregir la mediana de 4 semanas. Son 3 candidatos.
 
-**Métricas.** MAE (pasajeros por hora) como métrica principal; también RMSE, WAPE y sesgo. La **mejora** es 1 − MAE del modelo / MAE de la mediana de 4 semanas: 0,10 quiere decir un 10 % menos de error. No usamos R² para comparar: todas las reglas basadas en semanas anteriores dan un R² cercano a 1 y no sirve para distinguirlas. Todos los intervalos son del 95 %, con 1000 réplicas de bootstrap sorteando días.
+**Métricas.** MAE (pasajeros por hora) como métrica principal; también RMSE, WAPE y sesgo. La **mejora** es 1 − MAE del modelo / MAE de la mediana de 4 semanas: 0,10 quiere decir un 10 % menos de error. No usamos R² para comparar: todas las reglas basadas en semanas anteriores dan un R² cercano a 1 y no sirve para distinguirlas. Los intervalos son del 95 % con 1000 réplicas de bootstrap: en las reglas simples y en la evaluación de la opción 1 (notebooks 05 y 06) se sortean **semanas** enteras; en la comparación de las dos opciones (notebook 07) se sortean **días**, por lo que esos intervalos salen un poco más angostos y no se deben poner al lado de los anteriores.
 
 ---
 
 ## 5. Resultados
 
 ### 5.1 Validación (2025)
-
-[COMPLETAR con el notebook 07, sección 3]
 
 | | Opción 1 | Opción 2 |
 |---|---|---|
@@ -138,13 +142,11 @@ La opción 2 es una validación cruzada para series de tiempo con origen móvil 
 | Mejora sobre la mediana [IC 95 %] | | |
 | Mejor Ridge / mejor árbol | | |
 
-[COMPLETAR: diferencia de MAE entre opciones por trimestre (figura de la sección 3.2 del 07). Esperamos 0 en T1 y diferencias crecientes hacia T4.]
-
-[COMPLETAR: error por tipo de día. ¿Dónde gana el modelo y dónde la mediana?]
+[completar dsp de correr 07]
 
 ### 5.2 Test (2026, enero a octubre)
 
-[COMPLETAR con el notebook 07, sección 5]
+[completar dsp de correr 07]
 
 | | Opción 1 | Opción 2 |
 |---|---|---|
@@ -154,38 +156,30 @@ La opción 2 es una validación cruzada para series de tiempo con origen móvil 
 | Optimismo | | |
 | Spearman entre puestos de val y de test | | |
 
-[COMPLETAR: diferencia entre los modelos elegidos, con intervalo.]
-
-[COMPLETAR: error por tipo de día en test.]
-
 ---
 
 ## 6. Conclusiones
 
-[COMPLETAR una vez que estén los resultados. Preguntas a responder:]
+[completar dsp de tener todo corrido]
 
-1. **¿Sirve el aprendizaje automático para este problema?** ¿Algún modelo le gana a la mediana de 4 semanas en test, con un intervalo que no incluya el 0? ¿En qué días?
-2. **¿Cambia algo la forma de validar?** ¿Las opciones eligen distinto? ¿Cuál anticipa mejor el error de 2026 (optimismo más cercano a 1, Spearman más alto)?
-3. **¿Qué recomendamos?** Para un problema así, qué división usaríamos y por qué.
+Posibles preguntas para responder:
+1. **¿Sirve el aprendizaje automático para este problema?**
+2. **¿Cambia algo la forma de validar?**
+3. **¿Qué recomendamos?**
 
 **Limitaciones.**
 - Hay un solo año de test, y llega hasta octubre: no incluye noviembre ni diciembre, que son meses difíciles. Por eso miramos la mejora sobre la mediana en los mismos días y no solo el MAE.
-- Hay pocos feriados, elecciones y días especiales por año, así que lo que los modelos aprenden de ellos es poco.
-- Los candidatos son pocos y algunos muy parecidos entre sí (las 8 regresiones). Con candidatos más variados, la forma de validar podría pesar más.
-- No tenemos datos de paros ni de demanda insatisfecha.
+- Hay pocos feriados, elecciones y días especiales por año (en 2026 no hubo elecciones), así que lo que los modelos aprenden de ellos es poco.
+- Los candidatos son pocos: 10 regresiones que solo cambian en la penalización y en la interacción, y 3 árboles con un solo tamaño. Con candidatos más variados, la forma de validar podría pesar más.
+- En la comparación de las dos opciones los intervalos se calculan sorteando días sueltos, que da intervalos algo más angostos que sortear semanas.
+- No tenemos datos de demanda insatisfecha.
 
-**Reproducibilidad.** Todo el código está en [COMPLETAR: enlace al repositorio de GitHub]. Los notebooks 00 a 07 se corren en orden en Databricks; las fechas y divisiones están en `src/bondis/config.py`.
+**Reproducibilidad.** Todo el código está en https://github.com/carob05/Trabajo-Aprendizaje-Automatico-I.git. Los notebooks 00 a 07 se corren en orden en Databricks; las fechas, divisiones y ventanas están en `src/bondis/config.py`.
 
 ---
 
 ## Referencias
 
-[VERIFICAR: revisar formato y datos de cada referencia antes de entregar]
-
-- Bergmeir, C. y Benítez, J. M. (2012). On the use of cross-validation for time series predictor evaluation. *Information Sciences*, 191, 192–213.
-- Cerqueira, V., Torgo, L. y Mozetič, I. (2020). Evaluating time series forecasting models: an empirical study on performance estimation methods. *Machine Learning*, 109, 1997–2028.
-- Hyndman, R. J. y Athanasopoulos, G. (2021). *Forecasting: Principles and Practice* (3.ª ed.). OTexts. https://otexts.com/fpp3/
-- Tashman, L. J. (2000). Out-of-sample tests of forecasting accuracy: an analysis and review. *International Journal of Forecasting*, 16(4), 437–450.
-- Intendencia de Montevideo. Viajes realizados en los ómnibus del STM. Portal de datos abiertos. [COMPLETAR: URL]
-- Open-Meteo. Previous Runs API. https://open-meteo.com/ [COMPLETAR: URL exacta]
+- Intendencia de Montevideo. Viajes realizados en los ómnibus del STM. Portal de datos abiertos. [complear url]
+- Open-Meteo. Previous Runs API. https://open-meteo.com/ [poner url la exacta]
 - Fuentes del calendario: ver `src/bondis/calendario.py`.
