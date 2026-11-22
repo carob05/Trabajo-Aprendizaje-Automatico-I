@@ -9,8 +9,17 @@ from pyspark.sql import functions as F
 TIPOS_DIA = ["hábil", "sábado", "domingo", "turismo", "feriado"]
 
 
+def _regla_tipo_dia(no_laborable, carnaval, turismo, dia_semana):
+    """La regla de con_tipo_dia escrita una sola vez, para usarla con hoy y con ayer."""
+    return (F.when(no_laborable | carnaval, "feriado")
+             .when(turismo, "turismo")
+             .when(dia_semana == 7, "domingo")
+             .when(dia_semana == 6, "sábado")
+             .otherwise("hábil"))
+
+
 def con_tipo_dia(df):
-    """Agrega la columna 'tipo_dia' a cada fila.
+    """Agrega la columna 'tipo_dia' a cada fila, y 'tipo_dia_ayer' si gold la permite.
 
     El orden de las reglas importa, se aplica la primera que se cumple:
     1. Si es feriado no laborable o Carnaval, es "feriado".
@@ -20,15 +29,19 @@ def con_tipo_dia(df):
 
     Los feriados laborables (los que el comercio abre) quedan como el día de la semana
     que les toca. Para saber que son feriado se mira la columna 'es_feriado'.
+
+    'tipo_dia_ayer' es lo mismo pero para el día anterior. Lo necesitamos porque el rezago
+    de 1 día de un lunes es un domingo, y el del día después de un feriado es el feriado
+    (ver la sección 3.3 del EDA). Solo se agrega si gold tiene las columnas "ayer_...".
     """
-    return df.withColumn(
-        "tipo_dia",
-        F.when(F.col("es_no_laborable") | F.col("es_carnaval"), "feriado")
-         .when(F.col("es_turismo"), "turismo")
-         .when(F.col("dia_semana") == 7, "domingo")
-         .when(F.col("dia_semana") == 6, "sábado")
-         .otherwise("hábil"),
-    )
+    df = df.withColumn("tipo_dia", _regla_tipo_dia(
+        F.col("es_no_laborable"), F.col("es_carnaval"), F.col("es_turismo"), F.col("dia_semana")))
+    if "ayer_es_no_laborable" in df.columns:
+        dia_semana_ayer = ((F.col("dia_semana") + 5) % 7) + 1   # el lunes (1) da domingo (7)
+        df = df.withColumn("tipo_dia_ayer", _regla_tipo_dia(
+            F.col("ayer_es_no_laborable"), F.col("ayer_es_carnaval"), F.col("ayer_es_turismo"),
+            dia_semana_ayer))
+    return df
 
 
 def tamano_linea(train, n_grandes=20, n_medianas=30):

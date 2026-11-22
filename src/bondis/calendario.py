@@ -2,7 +2,9 @@
 
 Las fechas son las del día en que de verdad se festejó cada feriado. Algunos feriados
 se mueven por ley (Ley 16.805). Si caen martes o miércoles, pasan al lunes anterior.
-Si caen jueves o viernes, pasan al lunes siguiente.
+Si caen jueves o viernes, pasan al lunes siguiente. Los que se mueven son el 19 de abril,
+el 18 de mayo y el 12 de octubre. Reyes y el 19 de junio se festejan siempre el día que
+caen (en 2024 el 19 de junio fue miércoles y se festejó ese mismo día).
 
 De dónde sacamos los feriados:
 - El Observador, "Feriados en Uruguay 2025" (2 de enero de 2025).
@@ -25,6 +27,11 @@ En 2026 ningún feriado se movió de día. Reyes cayó martes, pero ese feriado 
 Para simplificar: en liceos y UTU cada plan termina en una fecha distinta (entre fines
 de noviembre y principios de diciembre). Usamos la fecha en que termina la mayoría.
 UdelaR no está incluida porque cada facultad tiene su propio calendario.
+
+Paros: no pusimos una columna de paros. Buscamos los paros generales del PIT-CNT de estos
+años (29/10/2025, 10/06/2026 y 11/08/2026) y en todos los ómnibus anduvieron como siempre.
+Además en la tabla de "Días raros" del notebook 03 no aparece ningún día hábil bajo que el
+calendario no explique. Si algún día aparece uno, lo buscamos y lo agregamos acá.
 
 Para agregar otro año, hay que completar las listas de abajo con las fechas oficiales.
 """
@@ -81,6 +88,8 @@ TURISMO = [(date(2024, 3, 25), date(2024, 3, 31)), (date(2025, 4, 14), date(2025
            (date(2026, 3, 30), date(2026, 4, 5))]
 
 # Elecciones nacionales y departamentales (siempre caen domingo). En 2026 no hubo.
+# Esos domingos los ómnibus andan con la flota de un día hábil durante la votación, así que
+# no se parecen a un domingo común.
 ELECCIONES = {
     date(2024, 6, 30): "Elecciones internas",
     date(2024, 10, 27): "Elecciones nacionales",
@@ -105,9 +114,8 @@ def es_semana_fiestas(d):
 
 
 # Días en que casi no hay ómnibus (se sabe de antemano).
-# Lo revisamos en los datos: esos días todo el sistema lleva entre 116 y 150 pasajeros.
-# Los de 2026 los pusimos porque pasa todos los años, pero hay que confirmarlo en la tabla
-# de "Días raros" del notebook 03 cuando estén cargados los datos.
+# Lo comprobamos en la tabla de "Días raros" del notebook 03: en los tres años, esos días
+# todo el sistema lleva entre 116 y 177 pasajeros. Son los 6 días más bajos de todos.
 SIN_SERVICIO = [date(2024, 1, 1), date(2024, 5, 1), date(2025, 1, 1), date(2025, 5, 1),
                 date(2026, 1, 1), date(2026, 5, 1)]
 

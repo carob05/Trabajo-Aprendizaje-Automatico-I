@@ -24,11 +24,8 @@ RAW_CALENDARIO = f"{RAW_PATH}/calendario"
 RAW_PAROS = f"{RAW_PATH}/paros"
 
 # Archivos de clima bajados de la página Open-Meteo (ver src/bondis/clima.py).
-# El asterisco quiere decir "todos los que empiecen así". Por ejemplo, agarra a la vez
-# clima_pronostico_2024_2025.csv y clima_pronostico_2026.csv, así no hay que volver a
-# bajar los años que ya teníamos.
-CLIMA_PRONOSTICO = f"{RAW_CLIMA}/clima_pronostico_*.csv"
-CLIMA_OBSERVADO = f"{RAW_CLIMA}/clima_observado_*.csv"
+# Se suben a RAW_CLIMA con cualquier nombre. El notebook 03 mira qué tiene cada archivo
+# para saber si es pronóstico u observado.
 
 # De dónde salen los viajes: el conjunto de datos "Viajes realizados en los ómnibus
 # del STM" del portal de datos abiertos de la Intendencia. Databricks no se puede
@@ -49,8 +46,10 @@ TABLE_LINEAS = f"{CATALOG}.{SCHEMA}.lineas"                   # qué líneas ent
 TABLE_CALENDARIO = f"{CATALOG}.{SCHEMA}.calendario"
 TABLE_CLIMA = f"{CATALOG}.{SCHEMA}.clima"
 TABLE_RESULTADOS = f"{CATALOG}.{SCHEMA}.resultados_modelos"   # errores de cada modelo (notebooks 05 y 06)
+TABLE_COMPARACION = f"{CATALOG}.{SCHEMA}.comparacion_validacion"   # opción 1 contra opción 2 (notebook 07)
 
-# Una línea entra al modelo solo si tuvo servicio al menos esta cantidad de días en CADA año
+# Una línea entra al modelo solo si tuvo servicio al menos esta cantidad de días en CADA
+# año de train y val (2024 y 2025). El año de test no se mira (ver notebook 03, paso 2).
 MIN_DIAS_LINEA = 100
 
 # Zona horaria de las fechas del STM (Uruguay no tiene horario de verano desde 2015)
@@ -86,6 +85,35 @@ PARTICIONES = {
 # Entrenamiento final: cuando ya elegimos el mejor modelo usando val, lo volvemos a
 # entrenar con train + val juntos (2024 y 2025) y recién ahí lo probamos en test.
 PARTICION_TRAIN_FINAL = (FECHA_INICIO, FECHA_INICIO_TEST)
+
+# ---------------------------------------------------------------------------
+# Las dos formas de elegir el modelo que comparamos (notebook 07)
+#
+# Las dos validan en los mismos días (todo 2025), se vuelven a entrenar con 2024 y 2025
+# y se prueban una sola vez en 2026. Lo único que cambia es con qué datos se entrena
+# el modelo que predice cada parte de 2025:
+#
+#   opcion_1  holdout de un año: un solo modelo entrenado con 2024 predice todo 2025.
+#             Es la división de arriba (PARTICIONES) y la del notebook 06.
+#   opcion_2  validación cruzada temporal (ventana creciente): 2025 se parte en 4
+#             trimestres, y cada trimestre lo predice un modelo entrenado con TODO lo
+#             anterior a ese trimestre. Ejemplo: el modelo que predice abril a junio de
+#             2025 se entrena con 2024 más enero a marzo de 2025.
+#
+# Cada ventana es (nombre, inicio de val, fin de val). Train siempre va desde
+# FECHA_INICIO hasta el inicio de val (sin incluirlo). Fin de val NO incluido.
+# ---------------------------------------------------------------------------
+OPCIONES_VALIDACION = {
+    "opcion_1": [
+        ("2025", "2025-01-01", "2026-01-01"),
+    ],
+    "opcion_2": [
+        ("2025_T1", "2025-01-01", "2025-04-01"),
+        ("2025_T2", "2025-04-01", "2025-07-01"),
+        ("2025_T3", "2025-07-01", "2025-10-01"),
+        ("2025_T4", "2025-10-01", "2026-01-01"),
+    ],
+}
 
 # ---------------------------------------------------------------------------
 # Con cuánta anticipación se predice
