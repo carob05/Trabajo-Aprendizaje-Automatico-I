@@ -138,18 +138,18 @@ La opción 2 es una validación cruzada para series de tiempo con origen móvil 
 | | Opción 1 | Opción 2 |
 |---|---|---|
 | Modelo elegido | `hgb_poisson_h63` | `hgb_poisson_h63` |
-| MAE en validación [IC 95 %] | 26,6 [24,8 a 28,6] | 26,5 [24,7 a 28,5] |
-| Mejora sobre la mediana [IC 95 %] | 33,1 % [25,8 % a 40,3 %] | 33,3 % [26,0 % a 40,5 %] |
-| Mejor Ridge (MAE) / mejor árbol (MAE) | 30,7 / 26,6 | 31,5 / 26,5 |
-| Mejora del mejor árbol sobre la mejor Ridge [IC 95 %] | 13,5 % [10,7 % a 16,4 %] | 16,0 % [12,9 % a 18,9 %] |
+| MAE en validación [IC 95 %] | 26,6 [24,8 a 28,7] | 26,6 [24,8 a 28,7] |
+| Mejora sobre la mediana [IC 95 %] | 33,2 % [26,0 % a 40,3 %] | 33,2 % [26,1 % a 40,0 %] |
+| Mejor Ridge (MAE) / mejor árbol (MAE) | 30,6 / 26,6 | 31,4 / 26,6 |
+| Mejora del mejor árbol sobre la mejor Ridge [IC 95 %] | 13,1 % [10,2 % a 16,0 %] | 15,5 % [12,6 % a 18,4 %] |
 
 Como referencia, la mediana de 4 semanas tiene un MAE de 39,7 y la mejor regla simple (`regla_por_tipo_dia`) de 34,8.
 
 - **Las dos opciones eligen el mismo modelo** y los puestos de los candidatos casi no cambian. En el primer trimestre dan exactamente el mismo error (el control da 0), y los números de Ridge de la opción 1 coinciden con los del notebook 06.
-- **Los árboles le ganan a todas las regresiones.** Donde más se nota es en días hábiles (29,0 contra 33,3) y en Turismo (28,7 contra 51,9). Son días en los que hay que combinar la línea, la hora y el tipo de día, y una regresión solo suma efectos.
-- **Entrenar con los meses de 2025 ya pasados (opción 2) no ayudó.** Las regresiones útiles se equivocan entre 0,4 y 2,2 pasajeros por hora más de abril a diciembre, y en los árboles la diferencia es ruido. Creemos que es porque el nivel de cada línea ya entra por los rezagos, así que el modelo se adapta solo, y la forma (cómo pesan la hora, el tipo de día y los feriados) casi no cambió de 2024 a 2025.
+- **Los árboles le ganan a todas las regresiones.** Donde más se nota es en días hábiles (29,0 contra 33,1) y en Turismo (27,4 contra 52,0). Son días en los que hay que combinar la línea, la hora y el tipo de día, y una regresión solo suma efectos.
+- **Entrenar con los meses de 2025 ya pasados (opción 2) no ayudó.** Las regresiones útiles se equivocan entre 0,4 y 2,4 pasajeros por hora más de abril a diciembre, y en los árboles la diferencia es ruido. Creemos que es porque el nivel de cada línea ya entra por los rezagos, así que el modelo se adapta solo, y la forma (cómo pesan la hora, el tipo de día y los feriados) casi no cambió de 2024 a 2025.
 - Las regresiones con α de 10⁵ y 10⁶ sí mejoran con la opción 2, pero porque con más filas el mismo α castiga menos, no por los datos nuevos.
-- **Ridge no sobreajusta**: el error de train y el de validación son casi iguales (30,5 y 30,7), y la curva de aprendizaje se aplana. El castigo no hace falta: con α de 1 a 10⁴ el error es casi el mismo.
+- **Ridge no sobreajusta**: el error de train y el de validación son casi iguales (30,5 y 30,6), y la curva de aprendizaje se aplana. El castigo no hace falta: con α de 1 a 10⁴ el error es casi el mismo.
 - Los días que siguen costando son la primera semana de enero, cuando la gente se va de vacaciones y ninguna variable lo marca, y el paro del 31/07/2025. Con lo que aprende del paro de UCOT de 2024, la regresión ya no se pasa en promedio ese día, pero baja todas las líneas por igual y en un paro cada empresa sale con una cantidad distinta de ómnibus.
 
 ### 5.2 Test (2026, enero a octubre)
