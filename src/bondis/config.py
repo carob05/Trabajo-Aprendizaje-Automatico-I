@@ -6,30 +6,17 @@ Los notebooks nunca escriben estos valores a mano, siempre los leen de este arch
 """
 
 # ---------------------------------------------------------------------------
-# Dónde se guardan las cosas en Databricks
-# Databricks ordena los datos en tres niveles: catálogo > esquema > tabla.
-# Es como carpeta > subcarpeta > archivo.
-# El "volume" es una carpeta para guardar archivos sueltos (ZIP, CSV).
+# Dónde se guardan las cosas en Databricks (catálogo > esquema > tabla, ver notebook 00)
 # ---------------------------------------------------------------------------
 CATALOG = "bondis_stm"
 SCHEMA = "datos"
 VOLUME = "raw"
 
-# Carpetas donde van los archivos originales, tal cual se descargan
+# Carpetas donde van los archivos originales, tal cual se descargan (ver README)
 RAW_PATH = f"/Volumes/{CATALOG}/{SCHEMA}/{VOLUME}"
 RAW_VIAJES = f"{RAW_PATH}/viajes"
 RAW_ZIP = f"{RAW_PATH}/viajes_zip"   # los ZIP de viajes que bajamos a mano
-RAW_CLIMA = f"{RAW_PATH}/clima"
-RAW_CALENDARIO = f"{RAW_PATH}/calendario"
-RAW_PAROS = f"{RAW_PATH}/paros"
-
-# Archivos de clima bajados de la página Open-Meteo (ver src/bondis/clima.py).
-# Se suben a RAW_CLIMA con cualquier nombre. El notebook 03 mira qué tiene cada archivo
-# para saber si es pronóstico u observado.
-
-# De dónde salen los viajes: el conjunto de datos "Viajes realizados en los ómnibus
-# del STM" del portal de datos abiertos de la Intendencia. Databricks no se puede
-# conectar a ese portal, así que los ZIP de cada mes se bajan a mano y se suben a RAW_ZIP.
+RAW_CLIMA = f"{RAW_PATH}/clima"      # los CSV de Open-Meteo (ver clima.py)
 
 # ---------------------------------------------------------------------------
 # Tablas del proyecto

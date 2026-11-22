@@ -28,10 +28,13 @@ Para simplificar: en liceos y UTU cada plan termina en una fecha distinta (entre
 de noviembre y principios de diciembre). Usamos la fecha en que termina la mayoría.
 UdelaR no está incluida porque cada facultad tiene su propio calendario.
 
-Paros: no pusimos una columna de paros. Buscamos los paros generales del PIT-CNT de estos
-años (29/10/2025, 10/06/2026 y 11/08/2026) y en todos los ómnibus anduvieron como siempre.
-Además en la tabla de "Días raros" del notebook 03 no aparece ningún día hábil bajo que el
-calendario no explique. Si algún día aparece uno, lo buscamos y lo agregamos acá.
+Paros: en los paros generales del PIT-CNT de estos años (29/10/2025, 10/06/2026 y
+11/08/2026) los ómnibus de Montevideo anduvieron como siempre, así que no se marcan.
+El que sí se notó fue el paro general de transporte de la Unott del 31/07/2025: Cutcsa
+salió igual pero con menos ómnibus. Lo encontramos porque fue uno de los días con más
+error en validación (notebook 06) y lo buscamos en las noticias (Montevideo Portal y
+Prensa Latina, 31/07/2025). Ese paro se anunció varios días antes, así que la noche
+anterior ya se sabía y se puede usar como variable.
 
 Para agregar otro año, hay que completar las listas de abajo con las fechas oficiales.
 """
@@ -97,12 +100,14 @@ ELECCIONES = {
     date(2025, 5, 11): "Elecciones departamentales",
 }
 
+# Paros de transporte que se notaron en los datos (ver arriba).
+PAROS = {
+    date(2025, 7, 31): "Paro de transporte (Unott)",
+}
+
 # Fiestas de fin de año: del 24 al 31 de diciembre. Solo el 25 es feriado, pero en toda esa
-# semana la gente viaja distinto que de costumbre. En una primera prueba de las reglas
-# simples (validando con octubre a diciembre de 2024) esos días fueron menos del 7 % de
-# los días, pero juntaron cerca de la cuarta parte del error.
-# Como las fechas se saben de antemano, se pueden usar sin problema. Se eligieron por
-# fecha, sin mirar los datos de test.
+# semana la gente viaja distinto que de costumbre (en el EDA el 24 y el 31 tienen menos de
+# la mitad de pasajeros que un día hábil normal). Las fechas se saben de antemano.
 FIESTAS_FIN_DE_ANIO = (12, 24, 31)   # (mes, primer día, último día)
 NOMBRES_FIESTAS = {(12, 24): "Víspera de Navidad", (12, 31): "Fin de Año"}
 
@@ -113,9 +118,9 @@ def es_semana_fiestas(d):
     return d.month == mes and primero <= d.day <= ultimo
 
 
-# Días en que casi no hay ómnibus (se sabe de antemano).
-# Lo comprobamos en la tabla de "Días raros" del notebook 03: en los tres años, esos días
-# todo el sistema lleva entre 116 y 177 pasajeros. Son los 6 días más bajos de todos.
+# Días en que casi no hay ómnibus. Que el 1° de enero y el 1° de mayo casi no hay servicio
+# se sabe de antemano. En la tabla de "Días raros" del notebook 03 son los días más bajos
+# de todos, con menos de 200 pasajeros en todo el sistema.
 SIN_SERVICIO = [date(2024, 1, 1), date(2024, 5, 1), date(2025, 1, 1), date(2025, 5, 1),
                 date(2026, 1, 1), date(2026, 5, 1)]
 
@@ -163,6 +168,19 @@ def hay_clases(nivel, d):
     return not any(a <= d <= b for a, b in cal["recesos"])
 
 
+def salto_clases(nivel, d):
+    """Cuánto cambió el estado de las clases entre hoy y las 4 semanas anteriores.
+
+    Es hay_clases(hoy) menos el promedio de hay_clases 7, 14, 21 y 28 días antes.
+    Va de -1 a 1. Ejemplo: la primera semana de clases da 1, porque hoy hay clases y en
+    las 4 semanas que mira la mediana no había. Ahí la mediana se queda corta y el modelo
+    tiene que saber que tiene que subirla. Si no cambió nada, da 0.
+    Solo usa el calendario, que se sabe de antemano.
+    """
+    antes = [hay_clases(nivel, d - timedelta(days=k)) for k in (7, 14, 21, 28)]
+    return float(hay_clases(nivel, d)) - sum(antes) / 4
+
+
 def _dias(inicio, fin):
     d = inicio
     while d <= fin:
@@ -170,12 +188,41 @@ def _dias(inicio, fin):
         d += timedelta(days=1)
 
 
+DIAS_TURISMO = {d for a, b in TURISMO for d in _dias(a, b)}
+
+
+def categoria_dia(d):
+    """Qué clase de día especial es la fecha, o None si es un día común.
+
+    Sirve para saber si un rezago apunta a un día raro (ver modelos.preparar). Si un día
+    entra en dos categorías, vale la primera de esta lista: sin servicio, paro,
+    no laborable, Carnaval, Turismo, elección, feriado laborable y semana de fiestas.
+    """
+    if d in SIN_SERVICIO:
+        return "sin_servicio"
+    if d in PAROS:
+        return "paro"
+    if d in NO_LABORABLES:
+        return "no_laborable"
+    if d in CARNAVAL:
+        return "carnaval"
+    if d in DIAS_TURISMO:
+        return "turismo"
+    if d in ELECCIONES:
+        return "eleccion"
+    if d in LABORABLES:
+        return "feriado_laborable"
+    if es_semana_fiestas(d):
+        return "fiestas"
+    return None
+
+
 def filas_calendario(inicio, fin):
     """Una fila (diccionario) por cada día entre inicio y fin, los dos incluidos."""
-    turismo = {d for a, b in TURISMO for d in _dias(a, b)}
+    turismo = DIAS_TURISMO
     filas = []
     for d in _dias(inicio, fin):
-        nombre = (NO_LABORABLES.get(d) or LABORABLES.get(d) or ELECCIONES.get(d)
+        nombre = (NO_LABORABLES.get(d) or LABORABLES.get(d) or ELECCIONES.get(d) or PAROS.get(d)
                   or NOMBRES_FIESTAS.get((d.month, d.day)))
         if d in CARNAVAL:
             nombre = "Carnaval"
@@ -189,6 +236,7 @@ def filas_calendario(inicio, fin):
             "es_turismo": d in turismo,
             "es_eleccion": d in ELECCIONES,
             "es_dia_sin_servicio": d in SIN_SERVICIO,
+            "es_paro": d in PAROS,
             "es_vispera_navidad": (d.month, d.day) == (12, 24),
             "es_fin_de_anio": (d.month, d.day) == (12, 31),
             "es_semana_fiestas": es_semana_fiestas(d),
@@ -211,6 +259,7 @@ def tabla_calendario(spark, inicio, fin):
         StructField("es_turismo", BooleanType(), False),
         StructField("es_eleccion", BooleanType(), False),
         StructField("es_dia_sin_servicio", BooleanType(), False),
+        StructField("es_paro", BooleanType(), False),
         StructField("es_vispera_navidad", BooleanType(), False),
         StructField("es_fin_de_anio", BooleanType(), False),
         StructField("es_semana_fiestas", BooleanType(), False),

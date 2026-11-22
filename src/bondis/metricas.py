@@ -13,10 +13,7 @@ grupo de días, sin volver a mirar las filas.
 
 Eso nos sirve para dos cosas:
 - separar el error por grupos (por tipo de día, por tamaño de línea)
-- calcular intervalos de confianza sorteando DÍAS o SEMANAS enteras (ver bootstrap_dias).
-  No se sortean filas porque las filas de un mismo día se parecen mucho entre sí (mismo
-  clima, mismo feriado). Si sorteáramos filas, el intervalo saldría más angosto de lo que
-  es en realidad. Lo mismo pasa, un poco menos, con los días de una misma semana.
+- calcular intervalos de confianza sorteando semanas enteras (ver bootstrap_dias)
 
 Las funciones marcadas con [Spark] reciben tablas de Spark. Las demás usan pandas y numpy,
 y se pueden probar fuera de Databricks.
@@ -108,22 +105,15 @@ def agregar_mejora(tabla, referencia, por=()):
     return t.drop(columns="_mae_ref")
 
 
-def bootstrap_dias(est, referencia, n_rep=1000, nivel=0.95, seed=42, bloque=1):
-    """Intervalos de confianza del 95 % sorteando días o semanas (bootstrap).
+def bootstrap_dias(est, referencia, n_rep=1000, nivel=0.95, seed=42, bloque=7):
+    """Intervalos de confianza del 95 % sorteando semanas (bootstrap por bloques).
 
-    Cómo funciona:
-    1. Tenemos, por ejemplo, 365 días de validación.
-    2. Sorteamos 365 días CON reposición (un día puede salir dos veces y otro ninguna).
-    3. Calculamos el MAE con esos días sorteados.
-    4. Repetimos 1000 veces. Así tenemos 1000 valores de MAE.
-    5. El intervalo va desde el valor que deja el 2,5 % más bajo hasta el que deja el 2,5 % más alto.
-
-    Si el intervalo es angosto, el resultado no depende mucho de qué días tocaron.
-
-    Con bloque=7 no se sortean días sueltos sino tandas de 7 días seguidos. Los días de una
-    misma semana se parecen (las mismas vacaciones, a veces la misma ola de frío o de lluvia),
-    y si los sorteamos sueltos el intervalo queda un poco más angosto de lo que debería.
-    Con bloque=1 es el bootstrap de días común.
+    Cómo funciona (la explicación larga está en el notebook 05):
+    1. Se parten los días en tandas de 'bloque' días seguidos (7 = una semana).
+    2. Se sortean tantas tandas como hay, CON reposición.
+    3. Se calcula el MAE con los días de las tandas sorteadas.
+    4. Se repite n_rep veces y el intervalo va del percentil 2,5 al 97,5.
+    Con bloque=1 es el bootstrap de días sueltos.
 
     Se usan los MISMOS días sorteados para todos los modelos. Así, si un día es difícil,
     es difícil para todos, y la comparación entre modelos es más justa.

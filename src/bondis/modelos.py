@@ -14,15 +14,21 @@ Las decisiones salen de lo que vimos en el análisis de datos (notebook 04):
   inestables. Por eso el modelo lineal usa solo cuatro: la mediana, el rezago de 1 día,
   el de 7 días y el total de la línea el día anterior.
 - El rezago de 1 día no sirve igual todos los días. Para un lunes, "ayer" es un domingo,
-  y para el día después de un feriado, "ayer" es el feriado. Una regresión lineal le da
-  el mismo peso todos los días, así que los lunes la tiraría para abajo. Por eso se agrega
-  una copia del rezago de 1 día que vale 0 cuando ayer fue un tipo de día distinto a hoy,
-  y una categoría con el cambio de tipo de día (por ejemplo "domingo a hábil").
+  y para el día después de un feriado, "ayer" es el feriado. Por eso hay una categoría con
+  el cambio de tipo de día (por ejemplo "domingo a hábil") y una copia del rezago de 1 día
+  que vale 0 cuando ayer fue un tipo de día distinto a hoy.
+- Si el rezago de 1 o de 7 días cae en un día raro (feriado, 1° de mayo, paro...), ese
+  valor no dice nada de hoy. Ejemplo: el 2 de mayo, "ayer" es el 1° de mayo, que casi no
+  tiene ómnibus. En esos casos el rezago se cambia por la mediana de 4 semanas
+  (ver corregir_rezagos). La mediana no tiene ese problema porque un valor raro no la mueve.
+- La mediana mira 4 semanas para atrás, así que cuando empiezan o terminan las clases
+  queda desactualizada. salto_clases avisa eso (ver calendario.salto_clases).
 - La lluvia entra como log(1 + mm). Así una tormenta de 40 mm no pesa 40 veces más que
   una lluvia de 1 mm, que es lo que pasaría si entrara tal cual.
 """
 
 import time
+from datetime import timedelta
 
 import numpy as np
 import pandas as pd
@@ -33,6 +39,7 @@ from sklearn.linear_model import Ridge
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
+from bondis import calendario
 from bondis.metricas import ESTADISTICOS
 
 OBJETIVO = "pasajeros"                    # lo que queremos predecir
@@ -53,9 +60,13 @@ CLIMA_LINEAL = ["temperatura_pron", "log_lluvia_pron_mm", "log_lluvia_pron_dia_m
 # Columnas de sí o no (se pasan a 1 y 0)
 BANDERAS = [
     "es_feriado", "es_no_laborable", "es_carnaval", "es_turismo", "es_eleccion",
-    "es_dia_sin_servicio", "es_vispera_navidad", "es_fin_de_anio", "es_semana_fiestas",
+    "es_dia_sin_servicio", "es_paro", "es_vispera_navidad", "es_fin_de_anio", "es_semana_fiestas",
     "clases_primaria", "clases_media", "llueve_pron",
 ]
+# Cuánto cambió el estado de las clases respecto de las 4 semanas que mira la mediana
+SALTO_CLASES = ["salto_clases_primaria", "salto_clases_media"]
+# Rezagos que se cambian por la mediana cuando caen en un día raro: (días para atrás, columna)
+REZAGOS_A_CORREGIR = [(1, "pasajeros_lag_1d"), (7, "pasajeros_lag_7d")]
 # Columnas que son categorías (nombres) y no números
 CATEGORICAS = ["linea", "tipo_dia", "tipo_dia_ayer", "tipo_linea"]
 
@@ -74,8 +85,8 @@ def columnas_a_leer(columnas_gold):
     """Dice qué columnas de gold hay que bajar a pandas, y qué columnas opcionales faltan.
 
     'tipo_dia' y 'tipo_dia_ayer' no están guardadas en gold. Se agregan antes con
-    variables.con_tipo_dia. Las columnas de fin de año aparecen solo si gold se volvió a
-    armar con el calendario nuevo.
+    variables.con_tipo_dia. Si falta alguna bandera (por ejemplo 'es_paro'), hay que
+    volver a correr el notebook 03.
     """
     columnas_gold = set(columnas_gold)
     faltan = [c for c in OBLIGATORIAS if c not in columnas_gold]
@@ -96,6 +107,40 @@ def categorias_desde(train):
     return {c: sorted(train[c].dropna().astype(str).unique()) for c in CATEGORICAS}
 
 
+def _por_fecha(fechas, funcion):
+    """Aplica 'funcion' a cada fecha distinta una sola vez (son pocas) y la copia a todas las filas."""
+    dias = fechas.dt.date
+    unicos = pd.unique(dias)
+    return dias.map(dict(zip(unicos, (funcion(d) for d in unicos))))
+
+
+def corregir_rezagos(df):
+    """Cambia por la mediana de 4 semanas los rezagos que caen en un día raro.
+
+    Un rezago se cambia si el día al que apunta es especial (calendario.categoria_dia) y
+    no es la misma clase de día especial que hoy. Ejemplos:
+    - 2 de mayo: el rezago de 1 día es el 1° de mayo (sin servicio). Se cambia.
+    - 8 de mayo: el rezago de 7 días es el 1° de mayo. Se cambia.
+    - Martes de Carnaval: el rezago de 1 día es el lunes de Carnaval. Es la misma clase
+      de día, así que se deja.
+    El total de la línea el día anterior se cambia por la suma de las medianas de ese día.
+    Todo sale del calendario y de días pasados, así que se sabe la noche anterior.
+    Devuelve la tabla y cuántas filas se cambiaron de cada rezago.
+    """
+    hoy = _por_fecha(df["fecha"], calendario.categoria_dia).fillna("")
+    cambiadas = {}
+    for k, col in REZAGOS_A_CORREGIR:
+        antes = _por_fecha(df["fecha"], lambda d, k=k: calendario.categoria_dia(d - timedelta(days=k))).fillna("")
+        raro = ((antes != "") & (antes != hoy)).to_numpy()
+        df.loc[raro, col] = df.loc[raro, REFERENCIA]
+        cambiadas[col] = int(raro.sum())
+        if k == 1:
+            suma_medianas = df.groupby(["linea", "fecha"])[REFERENCIA].transform("sum")
+            df.loc[raro, "pasajeros_linea_dia_anterior"] = suma_medianas[raro]
+            cambiadas["pasajeros_linea_dia_anterior"] = int(raro.sum())
+    return df, cambiadas
+
+
 def preparar(df, categorias):
     """Deja las columnas con el tipo que necesitan los modelos y agrega algunas nuevas.
 
@@ -108,6 +153,10 @@ def preparar(df, categorias):
             df[c] = df[c].fillna(False).astype("int8")   # verdadero/falso pasa a 1/0
     for c in [OBJETIVO, *REZAGOS, *CLIMA]:
         df[c] = df[c].astype("float64")
+    df, cambiadas = corregir_rezagos(df)
+    for nivel in ("primaria", "media"):
+        df[f"salto_clases_{nivel}"] = _por_fecha(
+            df["fecha"], lambda d, n=nivel: calendario.salto_clases(n, d)).astype("float64")
     for c in REZAGOS_LINEAL:
         df[f"log_{c}"] = np.log1p(df[c])                  # log(1 + x) para el modelo lineal
     for c in ("lluvia_pron_mm", "lluvia_pron_dia_mm"):
@@ -121,7 +170,9 @@ def preparar(df, categorias):
     df["hora_tipo"] = df["hora_cat"] + "_" + df["tipo_dia"].astype(str)   # ejemplo "8_hábil"
     for c, cats in categorias.items():
         df[c] = pd.Categorical(df[c].astype(str), categories=cats)
-    return df.reset_index(drop=True)
+    df = df.reset_index(drop=True)
+    df.attrs["rezagos_cambiados"] = cambiadas   # cuántas filas cambió corregir_rezagos
+    return df
 
 
 # ---------------------------------------------------------------------------
@@ -145,12 +196,14 @@ def perfil_historico(train, val):
 def referencias(train, val):
     """Predicciones en val de las reglas simples que usamos para comparar.
 
-    'regla_por_tipo_dia' no aprende nada. En feriados usa el perfil histórico y el resto
-    de los días usa la mediana de 4 semanas. Es la idea que quedó anotada al final del notebook 05.
+    'regla_por_tipo_dia' casi no aprende nada. En feriados y en Turismo usa el perfil
+    histórico, y el resto de los días usa la mediana de 4 semanas. Sale del notebook 05:
+    la mediana es la mejor en días comunes y el perfil es mucho mejor en feriados y Turismo.
     """
     perfil = perfil_historico(train, val)
     mediana = val[REFERENCIA].to_numpy(float)
-    regla = np.where(val["tipo_dia"].astype(str).to_numpy() == "feriado", perfil, mediana)
+    especial = np.isin(val["tipo_dia"].astype(str).to_numpy(), ["feriado", "turismo"])
+    regla = np.where(especial, perfil, mediana)
     return {"mediana_4sem": mediana, "perfil_historico": perfil, "regla_por_tipo_dia": regla}
 
 
@@ -198,7 +251,8 @@ class SobreReferencia(BaseEstimator, RegressorMixin):
 
 def columnas_arbol(columnas):
     """Columnas que usan los modelos de árboles."""
-    base = ["hora", "dia_semana", "linea", "tipo_dia", "tipo_linea", *REZAGOS, *CLIMA]
+    base = ["hora", "dia_semana", "linea", "tipo_dia", "tipo_dia_ayer", "tipo_linea",
+            *REZAGOS, *CLIMA, *SALTO_CLASES]
     return base + [c for c in BANDERAS if c in columnas]
 
 
@@ -220,7 +274,7 @@ def _lineal(columnas, alfa, interacciones):
     rezago de 1 día que solo cuenta cuando ayer fue el mismo tipo de día.
     """
     numericas = ([f"log_{c}" for c in REZAGOS_LINEAL] + ["log_lag_1d_mismo_tipo"] + CLIMA_LINEAL
-                 + [b for b in BANDERAS if b in columnas])
+                 + SALTO_CLASES + [b for b in BANDERAS if b in columnas])
     categoricas = (["hora_cat", "tipo_dia", "cambio_dia", "tipo_linea"]
                    + (["hora_tipo"] if interacciones else []))
     pre = ColumnTransformer([
@@ -365,13 +419,14 @@ def grupos_de_variables(columnas):
     columnas = set(columnas)
     grupos = {
         "rezagos de pasajeros": REZAGOS + [f"log_{c}" for c in REZAGOS_LINEAL] + ["log_lag_1d_mismo_tipo"],
-        "hora": ["hora", "hora_cat", "hora_tipo"],
+        "hora": ["hora", "hora_cat"],
+        # hora_tipo (la combinación hora x tipo de día) va solo acá, para no mezclarla dos veces
         "tipo de día (hoy y ayer)": ["tipo_dia", "tipo_dia_ayer", "cambio_dia", "dia_semana", "hora_tipo"],
         "línea": ["linea", "tipo_linea"],
         "feriados y días especiales": ["es_feriado", "es_no_laborable", "es_carnaval", "es_turismo",
-                                        "es_eleccion", "es_dia_sin_servicio"],
+                                        "es_eleccion", "es_dia_sin_servicio", "es_paro"],
         "fin de año": ["es_vispera_navidad", "es_fin_de_anio", "es_semana_fiestas"],
-        "clases": ["clases_primaria", "clases_media"],
+        "clases": ["clases_primaria", "clases_media", *SALTO_CLASES],
         "clima": [*CLIMA, "log_lluvia_pron_mm", "log_lluvia_pron_dia_mm", "llueve_pron"],
     }
     grupos = {g: [c for c in cols if c in columnas] for g, cols in grupos.items()}
@@ -386,6 +441,11 @@ def importancia_por_grupos(modelo, muestra, grupos, n_rep=3, seed=42):
     Si casi no sube, el modelo no la usaba (o tenía otra columna que decía lo mismo,
     como pasa con los rezagos y el promedio de 4 semanas).
     Las columnas de un mismo grupo se mezclan todas de la misma forma.
+
+    Ojo al leerlo: al mezclar los rezagos, a una línea chica le tocan los pasajeros de una
+    grande y la predicción se rompe por completo. Por eso ese grupo siempre da enorme. Y un
+    grupo que el modelo casi no usa da cerca de 0. Por ejemplo, la regresión no usa la
+    línea, solo tipo_linea, porque el nivel de cada línea ya viene en los rezagos.
     """
     X = muestra.reset_index(drop=True)
     y = X[OBJETIVO].to_numpy(float)
@@ -406,3 +466,32 @@ def importancia_por_grupos(modelo, muestra, grupos, n_rep=3, seed=42):
     out["aumento_pct"] = out["aumento_mae"] / base
     out.attrs["mae_base"] = base
     return out
+
+
+# ---------------------------------------------------------------------------
+# Coeficientes de la regresión en unidades que se puedan leer
+# ---------------------------------------------------------------------------
+def coeficientes(modelo):
+    """Coeficientes de las variables numéricas y de sí o no de una regresión ya entrenada.
+
+    El StandardScaler divide cada columna por su desvío antes de entrenar. Por eso el
+    coeficiente que guarda Ridge es "por cada desvío" (coef_estandarizado). Sirve para
+    comparar variables entre sí, pero no dice cuánto cambian los pasajeros.
+    Para eso se divide por el desvío y queda "por cada unidad" (coef_por_unidad):
+    - En una bandera (0 o 1), exp(coef_por_unidad) - 1 es más o menos cuánto cambian los
+      pasajeros, en porcentaje, cuando la bandera vale 1 (columna cambio_pct).
+    - En una variable con log (log_pasajeros_mediana_4sem), coef_por_unidad es cuánto sube
+      el log de los pasajeros si el log de la variable sube 1. Si da 0,5, que la mediana
+      sea el doble hace que la predicción suba más o menos un 41 % (2 elevado a 0,5).
+    """
+    reg = modelo.regressor_
+    pre, ridge = reg.named_steps["pre"], reg.named_steps["ridge"]
+    coefs = pd.Series(ridge.coef_, index=pre.get_feature_names_out())
+    escalador = pre.named_transformers_["num"]
+    columnas = next(cols for nombre, _, cols in pre.transformers_ if nombre == "num")
+    c = coefs[[f"num__{x}" for x in columnas]].to_numpy()
+    out = pd.DataFrame({"variable": columnas, "coef_estandarizado": c,
+                        "coef_por_unidad": c / escalador.scale_})
+    out["cambio_pct"] = np.where(out["variable"].isin(BANDERAS), np.expm1(out["coef_por_unidad"]), np.nan)
+    orden = out["coef_estandarizado"].abs().sort_values(ascending=False).index
+    return out.loc[orden].reset_index(drop=True)

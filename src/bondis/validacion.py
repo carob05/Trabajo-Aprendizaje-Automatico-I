@@ -113,13 +113,14 @@ def evaluar_opcion(datos, ventanas, candidatos, inicio_train, grupos=GRUPOS, log
 # ---------------------------------------------------------------------------
 # Resumir y elegir
 # ---------------------------------------------------------------------------
-def resumen(est, referencia, n_rep=1000, seed=42):
-    """Métricas de cada modelo juntando todas las ventanas, con intervalos sorteando días.
+def resumen(est, referencia, n_rep=1000, seed=42, bloque=7):
+    """Métricas de cada modelo juntando todas las ventanas, con intervalos sorteando semanas.
 
-    Devuelve una fila por modelo, ordenada de menor a mayor MAE.
+    Los intervalos se sacan igual que en el 05 y el 06 (tandas de 7 días), así se pueden
+    comparar. Devuelve una fila por modelo, ordenada de menor a mayor MAE.
     """
     tabla = metricas.agregar_mejora(metricas.metricas(est), referencia)
-    intervalos = metricas.bootstrap_dias(est, referencia, n_rep=n_rep, seed=seed)
+    intervalos = metricas.bootstrap_dias(est, referencia, n_rep=n_rep, seed=seed, bloque=bloque)
     return tabla.merge(intervalos, on="modelo").sort_values("mae").reset_index(drop=True)
 
 
@@ -169,7 +170,9 @@ def tabla_comparacion(resumenes_val, tabla_test, elegidos, referencia):
       optimismo:                test/val del elegido dividido test/val de la referencia.
                                 La referencia no aprende, así que su cambio es solo por pasar
                                 de 2025 a 2026. Mayor a 1 quiere decir que validación
-                                prometió más de lo que el modelo dio.
+                                prometió más de lo que el modelo dio. Es una aproximación:
+                                supone que el cambio de año afecta igual al modelo y a la
+                                referencia.
     """
     ref_val = {o: r.set_index("modelo").loc[referencia, "mae"] for o, r in resumenes_val.items()}
     test = tabla_test.set_index("modelo")
@@ -190,17 +193,18 @@ def tabla_comparacion(resumenes_val, tabla_test, elegidos, referencia):
     return pd.DataFrame(filas)
 
 
-def diferencia_entre_opciones(est_test, modelo_a, modelo_b, n_rep=1000, seed=42):
+def diferencia_entre_opciones(est_test, modelo_a, modelo_b, n_rep=1000, seed=42, bloque=7):
     """Diferencia de MAE en test entre los modelos que eligió cada opción, con intervalo.
 
-    Usa el bootstrap por días de metricas.py tomando modelo_b como referencia:
+    Usa el bootstrap por semanas de metricas.py tomando modelo_b como referencia:
     mejora > 0 quiere decir que modelo_a se equivoca menos que modelo_b.
     Si los dos eligieron el mismo modelo, la diferencia es 0.
     """
     if modelo_a == modelo_b:
         return {"mejora": 0.0, "inf": 0.0, "sup": 0.0}
     sub = est_test[est_test["modelo"].isin([modelo_a, modelo_b])]
-    b = metricas.bootstrap_dias(sub, modelo_b, n_rep=n_rep, seed=seed).set_index("modelo").loc[modelo_a]
+    b = (metricas.bootstrap_dias(sub, modelo_b, n_rep=n_rep, seed=seed, bloque=bloque)
+         .set_index("modelo").loc[modelo_a])
     m = metricas.agregar_mejora(metricas.metricas(sub), modelo_b).set_index("modelo").loc[modelo_a]
     return {"mejora": float(m["mejora_mae"]), "inf": float(b["mejora_mae_inf"]),
             "sup": float(b["mejora_mae_sup"])}
@@ -209,8 +213,7 @@ def diferencia_entre_opciones(est_test, modelo_a, modelo_b, n_rep=1000, seed=42)
 def candidatos_ridge(alfas=(1, 1_000, 10_000, 100_000, 1_000_000)):
     """Los mismos candidatos que el notebook 06: Ridge aditivo y con interacciones, cinco alfas.
 
-    Los alfas son grandes porque Ridge suma el castigo contra el error de todas las filas
-    (más o menos un millón). Con alfas de 0,1 a 100 todos daban el mismo modelo.
+    Por qué los alfas son tan grandes está explicado en el 06, sección 6.2.
     """
     candidatos = {}
     for interacciones, etiqueta in ((False, "aditivo"), (True, "interacciones")):

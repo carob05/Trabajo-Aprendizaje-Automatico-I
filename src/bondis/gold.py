@@ -12,6 +12,8 @@ Pasos:
 from pyspark.sql import functions as F
 from pyspark.sql.window import Window
 
+from bondis.variables import dia_semana
+
 # Columnas del calendario que también se guardan para el día anterior ("ayer_...").
 # Con ellas se sabe qué tipo de día fue ayer (ver variables.con_tipo_dia).
 COLUMNAS_AYER = ["es_no_laborable", "es_carnaval", "es_turismo"]
@@ -148,7 +150,7 @@ def agregar_variables_fecha(df, calendario):
         .withColumn("anio", F.year("fecha"))
         .withColumn("mes", F.month("fecha"))
         .withColumn("dia_mes", F.dayofmonth("fecha"))
-        .withColumn("dia_semana", ((F.dayofweek("fecha") + 5) % 7) + 1)   # 1 = lunes, 7 = domingo
+        .withColumn("dia_semana", dia_semana("fecha"))   # 1 = lunes, 7 = domingo
         .withColumn("es_fin_de_semana", F.col("dia_semana") >= 6)
         .join(calendario, "fecha", "left")
         .join(ayer, "fecha", "left")

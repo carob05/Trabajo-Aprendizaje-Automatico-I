@@ -3,13 +3,14 @@
 Cada función recibe una tabla de Spark y devuelve otra. No guardan nada.
 Guardar la tabla es trabajo del notebook 02_limpieza_silver.
 
-Para convertir texto en fecha o en número se usan try_to_timestamp y try_cast.
-La palabra "try" significa "intentar". Si el valor está mal escrito, en vez de
-frenar todo con un error, devuelven un valor vacío (NULL). Después contamos
-cuántos vacíos quedaron para saber cuántas filas venían mal.
+Para convertir texto en fecha o en número se usan try_to_timestamp y try_cast. Si el
+valor está mal escrito, en vez de frenar todo con un error, devuelven vacío (NULL).
+Después contamos cuántos vacíos quedaron para saber cuántas filas venían mal.
 """
 
 from pyspark.sql import functions as F
+
+from bondis.variables import dia_semana
 
 # Formas en que puede venir escrita la fecha. Se prueban en orden y se usa la primera que funciona.
 # Antes de probar, se arregla un poco el texto. Si viene con una 'T' entre la fecha y la hora
@@ -102,9 +103,7 @@ def tipar(df_bronze):
         df
         .withColumn("fecha", F.to_date("fecha_hora"))
         .withColumn("hora", F.hour("fecha_hora"))
-        # Spark numera los días con domingo = 1 hasta sábado = 7.
-        # Esta cuenta los pasa a lunes = 1 hasta domingo = 7, que es más natural.
-        .withColumn("dia_semana", ((F.dayofweek("fecha_hora") + 5) % 7) + 1)
+        .withColumn("dia_semana", dia_semana("fecha_hora"))   # 1 = lunes, 7 = domingo
         .withColumn("es_fin_de_semana", F.col("dia_semana") >= 6)
     )
 

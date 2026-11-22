@@ -1,6 +1,6 @@
 # Predicción de pasajeros de ómnibus del STM
 
-Queremos predecir **cuántas personas van a subir a cada línea de ómnibus de Montevideo, en cada hora del día siguiente**. Usamos los datos abiertos de viajes del STM de 2024, 2025 y 2026, el calendario (feriados, clases, elecciones) y el pronóstico del clima.
+Queremos predecir **cuántas personas van a subir a cada línea de ómnibus de Montevideo, en cada hora del día siguiente**. Usamos los datos abiertos de viajes del STM de 2024, 2025 y 2026, el calendario (feriados, clases, elecciones, paros) y el pronóstico del clima.
 
 ## En qué orden se corren los notebooks
 
@@ -39,6 +39,14 @@ Databricks no se puede conectar a la página de la Intendencia ni a Open-Meteo, 
 1. **Viajes.** Bajar el ZIP de cada mes del conjunto "Viajes realizados en los ómnibus del STM" del portal de datos abiertos de la Intendencia. Subirlo en Databricks a `Catalog > bondis_stm > datos > raw > viajes_zip`. Después se puede borrar la copia de la computadora.
 2. **Clima.** Abrir en el navegador los enlaces que están al principio de `src/bondis/clima.py` (hay uno para 2024 y 2025 y otro para 2026, de pronóstico y de observado). Guardar los CSV con cualquier nombre y subirlos a `raw/clima`. El notebook 03 lee todos los archivos de esa carpeta, reconoce cuál es pronóstico y cuál observado por las columnas que trae, y los junta.
 3. **Después de subir 2026.** Correr 01, 02 y 03 de nuevo. Bronze y silver solo procesan los meses nuevos. Gold se arma entera otra vez.
+
+## Cómo guardar las salidas de los notebooks
+
+Las salidas (tablas, gráficos, prints) se guardan en el repo porque `.databricks/commit_outputs` tiene `**`. Para que queden:
+
+1. Terminar primero los cambios de código. Si un notebook se cambia en la computadora y después se hace pull en Databricks, se pierden sus salidas.
+2. En Databricks, hacer pull, abrir el notebook y correrlo entero (Run all) hasta la última celda.
+3. Hacer el commit desde Databricks, no desde la computadora.
 
 ## Dónde está cada cosa
 

@@ -9,6 +9,15 @@ from pyspark.sql import functions as F
 TIPOS_DIA = ["hábil", "sábado", "domingo", "turismo", "feriado"]
 
 
+def dia_semana(fecha):
+    """Día de la semana con 1 = lunes y 7 = domingo.
+
+    Spark numera con 1 = domingo y 7 = sábado. Esta cuenta corre todo un lugar.
+    Se usa en silver y en gold, así los dos numeran igual.
+    """
+    return ((F.dayofweek(fecha) + 5) % 7) + 1
+
+
 def _regla_tipo_dia(no_laborable, carnaval, turismo, dia_semana):
     """La regla de con_tipo_dia escrita una sola vez, para usarla con hoy y con ayer."""
     return (F.when(no_laborable | carnaval, "feriado")
@@ -55,7 +64,8 @@ def tamano_linea(train, n_grandes=20, n_medianas=30):
     """
     from pyspark.sql.window import Window
 
-    w = Window.orderBy(F.desc("total"), "linea")
+    # Son unas 140 líneas, así que se ordenan todas juntas en una sola partición
+    w = Window.partitionBy(F.lit(0)).orderBy(F.desc("total"), "linea")
     return (
         train.groupBy("linea").agg(F.sum("pasajeros").alias("total"))
         .withColumn("puesto", F.row_number().over(w))

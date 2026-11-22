@@ -11,7 +11,7 @@ from pathlib import Path
 
 # Los archivos pueden venir con dos formas de nombre:
 #   viajes_stm_AAAA_MM.csv            (la que usamos en este proyecto, ejemplo viajes_stm_2024_03)
-#   viajes_stm_MMAAAA__....csv        (la de un trabajo anterior, ejemplo viajes_stm_032024)
+#   viajes_stm_MMAAAA....csv          (la que usa el portal de la Intendencia, ejemplo viajes_stm_032024)
 PATRON_AAAA_MM = re.compile(r"viajes_stm_(20\d{2})_(0[1-9]|1[0-2])(?!\d)")
 PATRON_MMAAAA = re.compile(r"viajes_stm_(0[1-9]|1[0-2])(20\d{2})(?!\d)")
 

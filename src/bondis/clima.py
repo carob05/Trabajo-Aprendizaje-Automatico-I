@@ -7,6 +7,9 @@ Usamos dos tipos de archivo, que se suben a raw/clima:
   usa el modelo. Hay cuatro servicios distintos (GFS, ECMWF, ICON y GEM) y usamos el
   PROMEDIO de los que tengan dato. Al compararlo con lo que pasó de verdad, el promedio
   fue el que mejor acertó la lluvia.
+  Un detalle: "previous_day1" es la corrida de unas 24 horas antes de cada hora. Para las
+  últimas horas del día que predecimos, esa corrida sale cerca de la medianoche anterior,
+  o sea justo en el límite de lo que se sabría. Lo tomamos como una aproximación.
 - Observado: el clima que hubo de verdad. Sirve solo para ver qué tan bien acierta el
   pronóstico. NO se usa en el modelo, porque el día anterior todavía no se sabe.
 
@@ -161,8 +164,7 @@ def tabla_clima_pandas(ruta_pronostico, ruta_observado=None):
     lluvia, cols_p = _promedio(p, "precipitation_previous_day1")
 
     # Un servicio cuenta como disponible en una hora si dio la temperatura y también la lluvia.
-    # Antes mirábamos solo la lluvia, y quedaban unas pocas horas con lluvia pero sin
-    # temperatura (en el EDA la temperatura tenía un poquito más de vacíos que la lluvia).
+    # Así no quedan horas con lluvia pero sin temperatura.
     pares = [(c.replace("precipitation_", "temperature_2m_", 1), c) for c in cols_p]
     pares = [(t, l) for t, l in pares if t in p.columns]
     if not pares:
