@@ -22,7 +22,7 @@ La demanda de ómnibus en Montevideo cambia según la hora, el día, el clima y 
 | Fuente | Qué usamos |
 |---|---|
 | Viajes del STM (Intendencia de Montevideo, datos abiertos): una fila por validación | Pasajeros por línea, día y hora; pasajeros de días anteriores |
-| Calendario armado por nosotros (feriados, Carnaval, Turismo, elecciones, fin de año, clases de ANEP) | Qué tipo de día es hoy y qué tipo de día fue ayer; si hay clases |
+| Calendario armado por nosotros (feriados, Carnaval, Turismo, elecciones, fin de año, clases de ANEP, paros de transporte) | Qué tipo de día es hoy y qué tipo de día fue ayer; si hay clases |
 | Open-Meteo, pronósticos guardados ("previous runs"): lo que pronosticaban 4 servicios del tiempo 24 horas antes | Lluvia y temperatura por hora |
 
 **Período.** De enero de 2024 a octubre de 2026 (34 meses, 1035 días; octubre de 2026 es el último mes publicado). En ese período subieron **848 millones de pasajeros**.
@@ -30,8 +30,8 @@ La demanda de ómnibus en Montevideo cambia según la hora, el día, el clima y 
 **Procesamiento.** Usamos Spark en Databricks con tres capas: *bronze* (los archivos tal cual), *silver* (tipos correctos, sin filas inválidas ni repetidas) y *gold* (la tabla del modelo). La limpieza casi no descartó nada: no hubo fechas, pasajeros ni líneas inválidas, y las filas repetidas fueron unas pocas miles entre más de 600 millones (menos del 0,01 %). Cada fila de gold es **una línea, un día y una hora**: 136 líneas × 1035 días × 24 horas = 3.378.240 filas. Armamos la grilla completa y pusimos 0 donde nadie subió, porque "0 pasajeros a las 3 de la mañana" es un dato y no un faltante. Comprobamos que la suma de pasajeros de gold coincide exactamente con la de silver para las líneas incluidas.
 
 **Variables.** Todas se conocen la noche anterior:
-- *Rezagos*: pasajeros de la misma línea y hora 1, 7, 14, 21 y 28 días antes; el promedio y la mediana de esas cuatro semanas; el total de la línea el día anterior.
-- *Calendario*: día de la semana, tipo de día (hábil, sábado, domingo, Turismo, feriado), **tipo de día de ayer**, feriados, Carnaval, elecciones, días de fin de año y si hay clases en primaria y en media. El calendario se sabe de antemano, así que usar el de ayer o el de hoy no es hacer trampa.
+- *Rezagos*: pasajeros de la misma línea y hora 1, 7, 14, 21 y 28 días antes; el promedio y la mediana de esas cuatro semanas; el total de la línea el día anterior. Cuando un rezago cae en un día raro (un feriado, el 1° de mayo, un paro) se cambia por la **mediana limpia**, que es la mediana de las semanas que no cayeron en días raros. Hizo falta porque la mediana aguanta una semana rara pero no dos: el 8 de mayo de 2025 miraba el 1° de mayo y el jueves de Turismo, y quedaba en la mitad de lo normal.
+- *Calendario*: día de la semana, tipo de día (hábil, sábado, domingo, Turismo, feriado), **tipo de día de ayer**, feriados, Carnaval, elecciones, días de fin de año, paros de transporte, si hay clases en primaria y en media, y si cambió el estado de las clases respecto de las 4 semanas que mira la mediana (por ejemplo, la primera semana de marzo). El calendario se sabe de antemano, así que usar el de ayer o el de hoy no es hacer trampa.
 - *Clima*: el **pronóstico** hecho 24 horas antes (promedio de GFS, ECMWF, ICON y GEM), no el clima observado, que el día anterior todavía no existe. El pronóstico está disponible desde el 19/01/2024 (98,2 % de las horas del período) y erra la temperatura por 1,65 °C en promedio. Pronosticó lluvia en el 12,6 % de las horas y llovió en el 12,2 %.
 
 **Líneas.** Entran las 136 líneas urbanas que funcionaron al menos 100 días en 2024 y en 2025, y llevan el 99,5 % de los pasajeros (quedan afuera 11 líneas, con el 0,5 %). Para elegirlas **no se mira 2026**: si exigiéramos que una línea funcione también en el año de test, estaríamos usando el test para decidir qué entra al modelo. Además, en los días en que una línea todavía no había arrancado, la grilla le pone 0 pasajeros, pero ese 0 no es real; esos días y el primer mes después de arrancar (cuando los rezagos miran días sin servicio) no se usan para entrenar ni para medir.
@@ -53,7 +53,7 @@ La demanda de ómnibus en Montevideo cambia según la hora, el día, el clima y 
 - La mediana de las 4 semanas anteriores tiene una correlación de 0,97 con los pasajeros. **La demanda se repite muchísimo de una semana a otra.**
 - El rezago de 1 día engaña en los cambios de tipo de día: un lunes lleva 2,5 veces los pasajeros del domingo anterior, pero casi exactamente lo mismo que la mediana de sus 4 lunes anteriores (cociente 1,00). Por eso la regresión usa el rezago de 1 día solo cuando ayer fue el mismo tipo de día que hoy.
 
-**Limitaciones de los datos.** Solo se registra quién subió, no quién se quedó esperando porque el ómnibus venía lleno. No hay una variable de paros: revisamos los paros generales del período (29/10/2025, 10/06/2026 y 11/08/2026) y en ninguno pararon los ómnibus, y no apareció ningún día hábil bajo que el calendario no explique. No incluimos líneas suburbanas ni el calendario de UdelaR.
+**Limitaciones de los datos.** Solo se registra quién subió, no quién se quedó esperando porque el ómnibus venía lleno. Sobre los paros: en los paros generales del PIT-CNT del período (29/10/2025, 10/06/2026 y 11/08/2026) los ómnibus anduvieron normal, así que no se marcan. El paro general de transporte de la Unott del 31/07/2025 sí se notó (lo encontramos porque fue uno de los días con más error en validación) y se marca en todas las líneas. Los paros de una sola empresa (UCOT el 27 y 28/05/2024, UCOT y Coetc el 24/04/2026) se marcan solo en las líneas de esa empresa. No incluimos líneas suburbanas ni el calendario de UdelaR.
 
 ---
 
@@ -121,13 +121,13 @@ La opción 2 es una validación cruzada para series de tiempo con origen móvil 
 **Reglas simples** (no aprenden, o casi nada):
 - *Mediana de 4 semanas*: la mediana de los pasajeros de la misma línea y hora, 7, 14, 21 y 28 días antes. **Es la regla a superar.**
 - *Perfil histórico*: el promedio de train para la misma línea, hora y tipo de día.
-- *Regla por tipo de día*: el perfil histórico en feriados y la mediana el resto de los días.
+- *Regla por tipo de día*: el perfil histórico en feriados y Turismo, y la mediana el resto de los días.
 
 **Candidatos que aprenden** (scikit-learn):
-- *Regresión Ridge* sobre log(1 + pasajeros). Usa cuatro rezagos en logaritmo (mediana de 4 semanas, 1 día, 7 días y total del día anterior), porque los demás tienen correlaciones de 0,95 a 1 entre sí; el rezago de 1 día solo cuando ayer fue el mismo tipo de día; el cambio de tipo de día de ayer a hoy (por ejemplo "domingo a hábil"); el calendario; la temperatura y la lluvia pronosticadas (la lluvia en logaritmo, para que una tormenta no pese decenas de veces más que una llovizna); y la hora, el tipo de día y el tipo de línea como categorías. Probamos cinco penalizaciones (α = 1; 10³; 10⁴; 10⁵; 10⁶), con y sin la interacción hora × tipo de día: 10 candidatos. Los α son grandes porque Ridge compara el castigo contra el error sumado de cerca de un millón de filas; con α entre 0,1 y 100 todos los modelos daban lo mismo.
-- *Árboles con boosting* (HistGradientBoosting, 63 hojas, 200 iteraciones), en tres versiones: con pérdida de Poisson (pensada para conteos), sobre log(1 + pasajeros), y **residual**, que aprende cuánto corregir la mediana de 4 semanas. Son 3 candidatos.
+- *Regresión Ridge* sobre log(1 + pasajeros). Usa cuatro rezagos en logaritmo (mediana limpia de 4 semanas, 1 día, 7 días y total del día anterior), porque los demás tienen correlaciones de 0,95 a 1 entre sí; el rezago de 1 día solo cuando ayer fue el mismo tipo de día; el cambio de tipo de día de ayer a hoy (por ejemplo "domingo a hábil"); el calendario; la temperatura y la lluvia pronosticadas (la lluvia en logaritmo, para que una tormenta no pese decenas de veces más que una llovizna); y la hora, el tipo de día y el tipo de línea como categorías. Probamos cinco penalizaciones (α = 1; 10³; 10⁴; 10⁵; 10⁶), con y sin la interacción hora × tipo de día: 10 candidatos. Los α son grandes porque Ridge compara el castigo contra el error sumado de cerca de un millón de filas; con α entre 0,1 y 100 todos los modelos daban lo mismo.
+- *Árboles con boosting* (HistGradientBoosting, 63 hojas, 200 iteraciones), en tres versiones: con pérdida de Poisson (pensada para conteos), sobre log(1 + pasajeros), y **residual**, que aprende cuánto corregir la mediana limpia de 4 semanas. Son 3 candidatos.
 
-**Métricas.** MAE (pasajeros por hora) como métrica principal; también RMSE, WAPE y sesgo. La **mejora** es 1 − MAE del modelo / MAE de la mediana de 4 semanas: 0,10 quiere decir un 10 % menos de error. No usamos R² para comparar: todas las reglas basadas en semanas anteriores dan un R² cercano a 1 y no sirve para distinguirlas. Los intervalos son del 95 % con 1000 réplicas de bootstrap: en las reglas simples y en la evaluación de la opción 1 (notebooks 05 y 06) se sortean **semanas** enteras; en la comparación de las dos opciones (notebook 07) se sortean **días**, por lo que esos intervalos salen un poco más angostos y no se deben poner al lado de los anteriores.
+**Métricas.** MAE (pasajeros por hora) como métrica principal; también RMSE, WAPE y sesgo. La **mejora** es 1 − MAE del modelo / MAE de la mediana de 4 semanas: 0,10 quiere decir un 10 % menos de error. No usamos R² para comparar: todas las reglas basadas en semanas anteriores dan un R² cercano a 1 y no sirve para distinguirlas. Los intervalos son del 95 % con 1000 réplicas de bootstrap, sorteando **semanas** enteras en todos los notebooks (05, 06 y 07), así que se pueden comparar entre sí. Todos los modelos usan las mismas semanas sorteadas, por eso el intervalo de la mejora dice si un modelo le gana de verdad a otro.
 
 ---
 
@@ -137,12 +137,20 @@ La opción 2 es una validación cruzada para series de tiempo con origen móvil 
 
 | | Opción 1 | Opción 2 |
 |---|---|---|
-| Modelo elegido | | |
-| MAE en validación [IC 95 %] | | |
-| Mejora sobre la mediana [IC 95 %] | | |
-| Mejor Ridge / mejor árbol | | |
+| Modelo elegido | `hgb_poisson_h63` | `hgb_poisson_h63` |
+| MAE en validación [IC 95 %] | 26,6 [24,8 a 28,6] | 26,5 [24,7 a 28,5] |
+| Mejora sobre la mediana [IC 95 %] | 33,1 % [25,8 % a 40,3 %] | 33,3 % [26,0 % a 40,5 %] |
+| Mejor Ridge (MAE) / mejor árbol (MAE) | 30,7 / 26,6 | 31,5 / 26,5 |
+| Mejora del mejor árbol sobre la mejor Ridge [IC 95 %] | 13,5 % [10,7 % a 16,4 %] | 16,0 % [12,9 % a 18,9 %] |
 
-[completar dsp de correr 07]
+Como referencia, la mediana de 4 semanas tiene un MAE de 39,7 y la mejor regla simple (`regla_por_tipo_dia`) de 34,8.
+
+- **Las dos opciones eligen el mismo modelo** y los puestos de los candidatos casi no cambian. En el primer trimestre dan exactamente el mismo error (el control da 0), y los números de Ridge de la opción 1 coinciden con los del notebook 06.
+- **Los árboles le ganan a todas las regresiones.** Donde más se nota es en días hábiles (29,0 contra 33,3) y en Turismo (28,7 contra 51,9). Son días en los que hay que combinar la línea, la hora y el tipo de día, y una regresión solo suma efectos.
+- **Entrenar con los meses de 2025 ya pasados (opción 2) no ayudó.** Las regresiones útiles se equivocan entre 0,4 y 2,2 pasajeros por hora más de abril a diciembre, y en los árboles la diferencia es ruido. Creemos que es porque el nivel de cada línea ya entra por los rezagos, así que el modelo se adapta solo, y la forma (cómo pesan la hora, el tipo de día y los feriados) casi no cambió de 2024 a 2025.
+- Las regresiones con α de 10⁵ y 10⁶ sí mejoran con la opción 2, pero porque con más filas el mismo α castiga menos, no por los datos nuevos.
+- **Ridge no sobreajusta**: el error de train y el de validación son casi iguales (30,5 y 30,7), y la curva de aprendizaje se aplana. El castigo no hace falta: con α de 1 a 10⁴ el error es casi el mismo.
+- Los días que siguen costando son el paro del 31/07/2025 (en 2024 no hubo ningún paro general para aprenderlo) y la primera semana de enero, cuando la gente se va de vacaciones y ninguna variable lo marca.
 
 ### 5.2 Test (2026, enero a octubre)
 
@@ -171,7 +179,7 @@ Posibles preguntas para responder:
 - Hay un solo año de test, y llega hasta octubre: no incluye noviembre ni diciembre, que son meses difíciles. Por eso miramos la mejora sobre la mediana en los mismos días y no solo el MAE.
 - Hay pocos feriados, elecciones y días especiales por año (en 2026 no hubo elecciones), así que lo que los modelos aprenden de ellos es poco.
 - Los candidatos son pocos: 10 regresiones que solo cambian en la penalización y en la interacción, y 3 árboles con un solo tamaño. Con candidatos más variados, la forma de validar podría pesar más.
-- En la comparación de las dos opciones los intervalos se calculan sorteando días sueltos, que da intervalos algo más angostos que sortear semanas.
+- Algunas variables (la mediana limpia, el salto de clases y el paro) se agregaron después de mirar errores de 2025, así que la validación sale un poco optimista. El error de verdad lo da el test.
 - No tenemos datos de demanda insatisfecha.
 
 **Reproducibilidad.** Todo el código está en https://github.com/carob05/Trabajo-Aprendizaje-Automatico-I.git. Los notebooks 00 a 07 se corren en orden en Databricks; las fechas, divisiones y ventanas están en `src/bondis/config.py`.

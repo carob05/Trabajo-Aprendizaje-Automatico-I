@@ -183,13 +183,17 @@ def marcar_paros_empresa(df, paros_empresa):
     """Pone es_paro en verdadero en las filas de las líneas cuya empresa paró ese día.
 
     paros_empresa es calendario.PAROS_EMPRESA (fecha -> empresas). Se compara si el nombre
-    de la empresa del paro aparece dentro de la columna 'empresa'.
+    de la empresa del paro aparece dentro de la columna 'empresa', mirando solo las letras
+    (igual que calendario.normalizar_empresa), así "U.C.O.T." también cuenta como "UCOT".
     """
+    from bondis.calendario import normalizar_empresa
+
+    letras = F.regexp_replace(F.translate(F.upper(F.col("empresa")), "ÁÉÍÓÚÜÑ", "AEIOUUN"), "[^A-Z]", "")
     marca = F.lit(False)
     for d, empresas in paros_empresa.items():
         en_empresa = F.lit(False)
         for e in empresas:
-            en_empresa = en_empresa | F.coalesce(F.col("empresa").contains(e.upper()), F.lit(False))
+            en_empresa = en_empresa | F.coalesce(letras.contains(normalizar_empresa(e)), F.lit(False))
         marca = marca | ((F.col("fecha") == F.lit(d)) & en_empresa)
     return df.withColumn("es_paro", F.col("es_paro") | marca)
 

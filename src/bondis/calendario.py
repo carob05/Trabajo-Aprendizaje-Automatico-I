@@ -116,13 +116,20 @@ PAROS = {
     date(2025, 7, 31): "Paro de transporte (Unott)",
 }
 
-# Paros de una sola empresa: fecha -> empresas que pararon. El nombre de la empresa tiene que
-# aparecer dentro de 'descrip_empresa' de los datos (se compara en mayúsculas).
+# Paros de una sola empresa: fecha -> empresas que pararon. El nombre tiene que aparecer
+# dentro de 'descrip_empresa' de los datos. Se compara solo con las letras en mayúscula,
+# así "U.C.O.T." y "Ucot" cuentan como "UCOT" (ver normalizar_empresa).
 PAROS_EMPRESA = {
     date(2024, 5, 27): ("UCOT",),
     date(2024, 5, 28): ("UCOT",),
     date(2026, 4, 24): ("UCOT", "COETC"),
 }
+
+
+def normalizar_empresa(nombre):
+    """Deja solo las letras, en mayúscula y sin tildes: 'U.C.O.T.' da 'UCOT'."""
+    sin_tildes = str(nombre).upper().translate(str.maketrans("ÁÉÍÓÚÜÑ", "AEIOUUN"))
+    return "".join(c for c in sin_tildes if "A" <= c <= "Z")
 
 
 def hay_paro(d, empresa=None):
@@ -131,8 +138,8 @@ def hay_paro(d, empresa=None):
         return True
     if empresa is None:
         return False
-    empresa = str(empresa).upper()
-    return any(e in empresa for e in PAROS_EMPRESA.get(d, ()))
+    empresa = normalizar_empresa(empresa)
+    return any(normalizar_empresa(e) in empresa for e in PAROS_EMPRESA.get(d, ()))
 
 # Fiestas de fin de año: del 24 al 31 de diciembre. Solo el 25 es feriado, pero en toda esa
 # semana la gente viaja distinto que de costumbre (en el EDA el 24 y el 31 tienen menos de
