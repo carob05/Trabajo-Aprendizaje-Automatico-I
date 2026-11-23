@@ -6,16 +6,16 @@ Queremos predecir **cuántas personas van a subir a cada línea de ómnibus de M
 
 Trabajamos todo en Databricks (Free Edition) con Spark. Los viajes del STM son 34 archivos ZIP de entre 220 y 350 MB, que descomprimidos pasan los 90 GB, así que en nuestras computadoras no se podía trabajar cómodo. En Databricks los datos quedan en un solo lugar para todo el equipo, el código se corre igual para todos y los cálculos pesados (armar silver y gold) son mucho más rápidos.
 
-El repositorio de GitHub es privado. Hay dos formas de reproducir el trabajo.
+El repositorio de GitHub es privado. Podés consultar el trabajo ya ejecutado o reproducirlo en tu propia cuenta.
 
-### Opción A: entrar a nuestro workspace (la más rápida)
+### Opción A: consultar el trabajo en nuestro workspace
 
 1. Si no tenés cuenta de Databricks, creá una gratis en Databricks Free Edition (https://www.databricks.com/learn/free-edition).
-2. Mandanos el correo con el que entrás a Databricks. Te agregamos como usuario a nuestro workspace y te damos permiso de lectura sobre el catálogo `bondis_stm`.
+2. Mandanos el correo con el que entrás a Databricks. Te agregamos como usuario a nuestro workspace y te damos acceso de lectura a los notebooks, las tablas del catálogo `bondis_stm` y los archivos del volume `raw`.
 3. Cuando entres vas a ver:
    - En **Catalog > bondis_stm > datos**, todas las tablas: `viajes_bronze`, `viajes_silver`, `demanda_gold`, `resultados_modelos` y `comparacion_validacion`, además de los archivos originales en el volume `raw`.
    - En **Workspace**, la carpeta del repo con los notebooks ya corridos y sus salidas.
-4. No hace falta volver a cargar los datos. Los notebooks 04 a 07 solo leen `demanda_gold`, así que se pueden abrir y correr directo. Si se vuelven a correr el 05, el 06 o el 07, se reescriben sus resultados en las tablas, con los mismos valores.
+4. Para revisar el trabajo, abrí los notebooks y sus salidas guardadas. No hace falta ejecutarlos. Los notebooks 05, 06 y 07 escriben resultados en tablas, por lo que ejecutarlos requiere permisos de escritura y puede reemplazar los resultados anteriores.
 5. Para esta opción no hace falta acceso a GitHub, porque el código ya está dentro del workspace.
 
 ### Opción B: armar todo desde cero en tu propia cuenta
@@ -26,9 +26,17 @@ El repositorio de GitHub es privado. Hay dos formas de reproducir el trabajo.
 4. En **Workspace > Create > Git folder**, pegá la URL del repo: https://github.com/carob05/Trabajo-Aprendizaje-Automatico-I.git
 5. Abrí y corré `notebooks/00_setup`. Crea el catálogo `bondis_stm`, el esquema `datos`, el volume `raw` y sus carpetas.
 6. Bajá los viajes y el clima y subilos al volume como dice la sección "Cómo subir los datos" de más abajo. Hacen falta los meses de enero de 2024 a octubre de 2026 (34 ZIP) y los CSV de clima de los enlaces de `src/bondis/clima.py`. Databricks no se puede conectar a esas páginas, por eso se bajan a mano desde el navegador.
-7. Corré los notebooks en orden, del 01 al 07. El 01, el 02 y el 03 son los más lentos porque leen todos los viajes. El 07 tarda cerca de media hora porque entrena muchos modelos.
+7. Corré los notebooks del 01 al 06, dejando apagado el test del 06. Después corré el 07 hasta validación. Una vez fijada la elección, ejecutá el test de la sección 5 y el análisis de la 5.1. El 07 ya evalúa la regresión del 06 junto con los demás candidatos. El 01, el 02 y el 03 son los más lentos por el volumen de viajes. El 07 tarda cerca de media hora.
 
-Free Edition tiene un límite de uso por día. Si se pasa, el cómputo se apaga hasta el día siguiente, pero no se pierde nada. Por eso conviene correr los notebooks de a uno.
+**La versión guardada del 07 tiene `EVALUAR_EN_TEST = True`. Un `Run all` vuelve a ejecutar el test.** Para reproducir primero la validación, ponelo en `False` antes de ejecutar el notebook.
+
+Free Edition tiene un límite de uso por día. Si se pasa, el cómputo puede detenerse. Las tablas y los archivos guardados se mantienen, pero las variables de la sesión pueden perderse. Por eso conviene correr los notebooks de a uno.
+
+## Entorno y datos utilizados
+
+- Databricks Free Edition, entorno versión 6 y Spark 4.2.0. Las versiones de Python, pandas, NumPy y scikit-learn no quedaron registradas en las salidas.
+- Datos del 01/01/2024 al 31/10/2026: 34 ZIP de viajes y 2 CSV de clima, uno de pronóstico y otro de observado.
+- La ejecución de validación y test del 07 quedó guardada en el commit [`7e2fc2a`](https://github.com/carob05/Trabajo-Aprendizaje-Automatico-I/commit/7e2fc2a49a11a07fec23102d07bfc7e38ea9ec2c).
 
 ## En qué orden se corren los notebooks
 
@@ -40,7 +48,7 @@ Free Edition tiene un límite de uso por día. Si se pasa, el cómputo se apaga 
 | `03_features_gold` | Suma pasajeros por línea, día y hora, y agrega calendario, clima y rezagos. Marca cada fila como train, val o test | `demanda_gold` |
 | `04_eda` | Mira los datos de train para entenderlos antes de modelar | Nada (solo gráficos y conclusiones) |
 | `05_baseline` | Prueba reglas simples para saber qué error hay que superar | `resultados_modelos` (etapa baseline) |
-| `06_modelo` | Regresión Ridge: aprende con 2024, se elige con 2025 y se prueba una vez en 2026 | `resultados_modelos` (etapas modelo y test) |
+| `06_modelo` | Regresión Ridge: aprende con 2024 y se elige con 2025. Su test separado es opcional, porque también se evalúa en el 07 | `resultados_modelos` (etapa modelo y, si se ejecuta su test, etapa test) |
 | `07_comparacion_validacion` | Compara las dos formas de elegir el modelo (opción 1 y opción 2) con el mismo test. Además de Ridge prueba árboles con boosting, así que el modelo final sale de acá. Solo lee gold | `comparacion_validacion` (etapas validacion y test) |
 
 ## Cómo se dividen los datos
@@ -72,9 +80,9 @@ Databricks no se puede conectar a la página de la Intendencia ni a Open-Meteo, 
 
 Las salidas (tablas, gráficos, prints) se guardan en el repo porque `.databricks/commit_outputs` tiene `**`. Para que queden:
 
-1. Terminar primero los cambios de código. Si un notebook se cambia en la computadora y después se hace pull en Databricks, se pierden sus salidas.
-2. En Databricks, hacer pull, abrir el notebook y correrlo entero (Run all) hasta la última celda.
-3. Hacer el commit desde Databricks, no desde la computadora.
+1. Antes de hacer pull en Databricks, exportar como respaldo los notebooks ejecutados con sus salidas. Un pull puede limpiar las salidas visibles de los notebooks actualizados.
+2. Revisar que el notebook conserve las salidas que se quieren guardar. No hace falta repetir el test para guardarlas.
+3. Revisar los cambios y hacer **Commit & Push** desde Databricks. Si Git exige un pull antes, conservar el respaldo y resolver cualquier conflicto sin descartar las salidas.
 
 ## Dónde está cada cosa
 
