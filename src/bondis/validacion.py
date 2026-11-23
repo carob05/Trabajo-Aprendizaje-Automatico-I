@@ -253,3 +253,51 @@ def para_mostrar(tabla):
         "mejora [IC 95 %]": [intervalo(*x, pct=True)
                              for x in tabla[["mejora_mae", "mejora_mae_inf", "mejora_mae_sup"]].to_numpy()],
     })
+
+
+# ---------------------------------------------------------------------------
+# Lo que se agregó antes de correr el test (notebook 07, secciones 4.1 y 5.1)
+# ---------------------------------------------------------------------------
+def solo_meses(est, meses):
+    """Las sumas por día de 'est', pero solo de los meses pedidos (1 = enero).
+
+    Test (2026) llega hasta octubre y validación es todo 2025. Para comparar los dos
+    en la misma época del año, se miran solo los meses de 2025 que también están en test.
+    """
+    return est[pd.to_datetime(est["fecha"]).dt.month.isin(list(meses))]
+
+
+def que_tan_bien_anticipa(resumenes_val, tabla_test, candidatos, referencia):
+    """Qué tan bien adivinó cada opción el error de test de TODOS los candidatos.
+
+    tabla_comparacion solo mira el modelo elegido. Si las dos opciones eligen el mismo,
+    en test tienen el mismo error y casi el mismo optimismo, así que esa tabla no las
+    puede separar. Acá se mira cada candidato por separado: validación le "prometió" un
+    MAE y en test sacó otro. La opción con números más chicos es la que adivina mejor.
+
+    Devuelve una fila por opción con:
+      diferencia_promedio:  promedio de |MAE test - MAE val|, en pasajeros por hora
+      diferencia_con_signo: promedio de MAE test - MAE val. Mayor a 0 quiere decir que
+                            validación prometió menos error del que hubo en test
+      diferencia_pct:       promedio de |MAE test / MAE val - 1|. Lo mismo pero en
+                            porcentaje, así los candidatos con mucho error no pesan más
+      optimismo_lejos_de_1: promedio de |optimismo - 1| de cada candidato. Es como
+                            diferencia_pct pero descontando el cambio de año con la
+                            referencia, igual que en tabla_comparacion
+    """
+    test = tabla_test.set_index("modelo")["mae"]
+    filas = []
+    for opcion, r in resumenes_val.items():
+        val = r.set_index("modelo")["mae"]
+        c = [m for m in candidatos if m in val.index and m in test.index]
+        cociente = test[c] / val[c]
+        cambio_referencia = test[referencia] / val[referencia]
+        filas.append({
+            "opcion": opcion,
+            "candidatos": len(c),
+            "diferencia_promedio": float((test[c] - val[c]).abs().mean()),
+            "diferencia_con_signo": float((test[c] - val[c]).mean()),
+            "diferencia_pct": float((cociente - 1).abs().mean()),
+            "optimismo_lejos_de_1": float((cociente / cambio_referencia - 1).abs().mean()),
+        })
+    return pd.DataFrame(filas)

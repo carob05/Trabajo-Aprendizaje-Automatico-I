@@ -305,3 +305,19 @@ def tabla_calendario(spark, inicio, fin):
         StructField("nombre_dia_especial", StringType(), True),
     ])
     return spark.createDataFrame(filas_calendario(inicio, fin), esquema)
+
+# ---------------------------------------------------------------------------
+# Paros generales que NO se marcan (ver arriba: los ómnibus anduvieron normal).
+# Ningún modelo los usa. Están acá solo para poder sacar esos días del test y ver
+# si la forma de marcar los paros cambia el resultado (notebook 07, sección 5.1).
+# ---------------------------------------------------------------------------
+PAROS_QUE_NO_SE_NOTARON = [date(2025, 10, 29), date(2026, 6, 10), date(2026, 8, 11)]
+
+
+def dias_con_paro(desde):
+    """Todos los días con algún paro, marcado o no, desde la fecha 'desde' (incluida).
+
+    Junta los paros de todo el sistema, los de una sola empresa y los que no se notaron.
+    """
+    todos = set(PAROS) | set(PAROS_EMPRESA) | set(PAROS_QUE_NO_SE_NOTARON)
+    return sorted(d for d in todos if d >= desde)
