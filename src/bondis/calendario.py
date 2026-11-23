@@ -307,17 +307,42 @@ def tabla_calendario(spark, inicio, fin):
     return spark.createDataFrame(filas_calendario(inicio, fin), esquema)
 
 # ---------------------------------------------------------------------------
-# Paros generales que NO se marcan (ver arriba: los ómnibus anduvieron normal).
-# Ningún modelo los usa. Están acá solo para poder sacar esos días del test y ver
-# si la forma de marcar los paros cambia el resultado (notebook 07, sección 5.1).
+# Paros que NO se marcan. Ningún modelo los usa. Están acá solo para poder sacar esos
+# días del test y ver si la forma de marcar los paros cambia el resultado (notebook 07,
+# sección 5.1).
+#
+# Paros generales parciales del PIT-CNT (de 9 a 13). En los cuatro la prensa avisó ANTES
+# que los ómnibus urbanos iban a andar normal, así que no se marcan:
+# - 12/08/2025: Unott "se adhiere al paro pero no suspenderá sus servicios" (Montevideo
+#   Portal, 11/08/2025, "Paro general del Pit-Cnt: así funcionarán los servicios durante
+#   este martes 12 de agosto").
+# - 29/10/2025: Cutcsa funciona normal, el transporte "se adhiere, pero no para"
+#   (Montevideo Portal, 27/10/2025, "Paro del Pit-Cnt: cómo serán los horarios de ómnibus").
+# - 10/06/2026: Unott "trabajará con normalidad" (El Observador, 09/06/2026, "Paro del
+#   PIT-CNT el miércoles 10 de junio: qué servicios públicos se verán afectados").
+# - 11/08/2026: "transporte urbano y suburbano funcionará con normalidad" (Telenoche,
+#   10/08/2026, "Paro general parcial del PIT-CNT este martes").
 # ---------------------------------------------------------------------------
-PAROS_QUE_NO_SE_NOTARON = [date(2025, 10, 29), date(2026, 6, 10), date(2026, 8, 11)]
+PAROS_QUE_NO_SE_NOTARON = [date(2025, 8, 12), date(2025, 10, 29), date(2026, 6, 10), date(2026, 8, 11)]
+
+# Paro de una empresa que encontramos después de congelar el modelo, antes de correr el
+# test. No se agregó a PAROS_EMPRESA porque eso cambiaba las variables con el modelo ya
+# elegido. Solo se usa para sacarlo del test en el análisis sin días de paro.
+# - UCOT, domingo 09/08/2026 desde la mañana hasta completar 24 horas el lunes 10/08/2026,
+#   después del secuestro de un ómnibus de la línea 306 por hinchas de Cerro (Montevideo
+#   Portal y El Observador, 10/08/2026).
+PAROS_EMPRESA_SIN_MARCAR = {
+    date(2026, 8, 9): ("UCOT",),
+    date(2026, 8, 10): ("UCOT",),
+}
 
 
 def dias_con_paro(desde):
     """Todos los días con algún paro, marcado o no, desde la fecha 'desde' (incluida).
 
-    Junta los paros de todo el sistema, los de una sola empresa y los que no se notaron.
+    Junta los paros de todo el sistema, los de una sola empresa (marcados o no) y los
+    paros generales que no se notaron.
     """
-    todos = set(PAROS) | set(PAROS_EMPRESA) | set(PAROS_QUE_NO_SE_NOTARON)
+    todos = (set(PAROS) | set(PAROS_EMPRESA) | set(PAROS_QUE_NO_SE_NOTARON)
+             | set(PAROS_EMPRESA_SIN_MARCAR))
     return sorted(d for d in todos if d >= desde)
