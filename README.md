@@ -2,6 +2,34 @@
 
 Queremos predecir **cuántas personas van a subir a cada línea de ómnibus de Montevideo, en cada hora del día siguiente**. Usamos los datos abiertos de viajes del STM de 2024, 2025 y 2026, el calendario (feriados, clases, elecciones, paros) y el pronóstico del clima.
 
+## Por qué Databricks y cómo reproducirlo
+
+Trabajamos todo en Databricks (Free Edition) con Spark. Los viajes del STM son 34 archivos ZIP de entre 220 y 350 MB, que descomprimidos pasan los 90 GB, así que en nuestras computadoras no se podía trabajar cómodo. En Databricks los datos quedan en un solo lugar para todo el equipo, el código se corre igual para todos y los cálculos pesados (armar silver y gold) son mucho más rápidos.
+
+El repositorio de GitHub es privado. Hay dos formas de reproducir el trabajo.
+
+### Opción A: entrar a nuestro workspace (la más rápida)
+
+1. Si no tenés cuenta de Databricks, creá una gratis en Databricks Free Edition (https://www.databricks.com/learn/free-edition).
+2. Mandanos el correo con el que entrás a Databricks. Te agregamos como usuario a nuestro workspace y te damos permiso de lectura sobre el catálogo `bondis_stm`.
+3. Cuando entres vas a ver:
+   - En **Catalog > bondis_stm > datos**, todas las tablas: `viajes_bronze`, `viajes_silver`, `demanda_gold`, `resultados_modelos` y `comparacion_validacion`, además de los archivos originales en el volume `raw`.
+   - En **Workspace**, la carpeta del repo con los notebooks ya corridos y sus salidas.
+4. No hace falta volver a cargar los datos. Los notebooks 04 a 07 solo leen `demanda_gold`, así que se pueden abrir y correr directo. Si se vuelven a correr el 05, el 06 o el 07, se reescriben sus resultados en las tablas, con los mismos valores.
+5. Para esta opción no hace falta acceso a GitHub, porque el código ya está dentro del workspace.
+
+### Opción B: armar todo desde cero en tu propia cuenta
+
+1. Como el repo es privado, mandanos tu usuario de GitHub y te invitamos como colaborador. Aceptá la invitación que te llega por correo.
+2. Creá una cuenta gratis en Databricks Free Edition (https://www.databricks.com/learn/free-edition).
+3. Conectá tu cuenta de GitHub a Databricks, en **Settings > Linked accounts > Git integration**. Sin esto Databricks no puede leer un repo privado.
+4. En **Workspace > Create > Git folder**, pegá la URL del repo: https://github.com/carob05/Trabajo-Aprendizaje-Automatico-I.git
+5. Abrí y corré `notebooks/00_setup`. Crea el catálogo `bondis_stm`, el esquema `datos`, el volume `raw` y sus carpetas.
+6. Bajá los viajes y el clima y subilos al volume como dice la sección "Cómo subir los datos" de más abajo. Hacen falta los meses de enero de 2024 a octubre de 2026 (34 ZIP) y los CSV de clima de los enlaces de `src/bondis/clima.py`. Databricks no se puede conectar a esas páginas, por eso se bajan a mano desde el navegador.
+7. Corré los notebooks en orden, del 01 al 07. El 01, el 02 y el 03 son los más lentos porque leen todos los viajes. El 07 tarda cerca de media hora porque entrena muchos modelos.
+
+Free Edition tiene un límite de uso por día. Si se pasa, el cómputo se apaga hasta el día siguiente, pero no se pierde nada. Por eso conviene correr los notebooks de a uno.
+
 ## En qué orden se corren los notebooks
 
 | Notebook | Qué hace | Qué deja guardado |

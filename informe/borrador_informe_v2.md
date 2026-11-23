@@ -134,7 +134,7 @@ Ridge no sobreajusta: su error en entrenamiento y en validación es casi el mism
 
 Hay cosas que este trabajo no puede responder. Tenemos un solo año de test y llega hasta octubre, así que no incluye noviembre ni diciembre. Por eso miramos la mejora sobre las reglas en los mismos días y no solo el MAE. Hay pocos feriados, elecciones y días especiales por año, y en 2026 no hubo elecciones. Los candidatos son pocos: 10 regresiones que solo cambian en la penalización y la interacción, y 3 árboles sin ajustar (sección 4). Con candidatos más variados la forma de validar podría pesar más. Algunas variables (la mediana limpia, el salto de clases y los paros) las agregamos después de mirar errores de 2025, así que la validación sale un poco optimista para las dos opciones, y el error de verdad lo da el test. Por último, los datos solo registran quién subió y no quién se quedó esperando porque el ómnibus venía lleno.
 
-Todo el código está en https://github.com/carob05/Trabajo-Aprendizaje-Automatico-I. Los notebooks 00 a 07 se corren en orden en Databricks, y las fechas, divisiones y ventanas están en `src/bondis/config.py`.
+Trabajamos todo en Databricks Free Edition, con Spark, porque los viajes descomprimidos pasan los 90 GB y ahí corre mucho más rápido que en nuestras computadoras. El código está en un repositorio privado de GitHub (https://github.com/carob05/Trabajo-Aprendizaje-Automatico-I). Para reproducirlo se puede entrar a nuestro workspace, donde ya están las tablas, el código y los notebooks corridos (hay que pasarnos el correo de la cuenta de Databricks), o armarlo desde cero pidiéndonos acceso al repositorio y bajando los datos a mano. Los pasos de las dos formas están en el README del repositorio.
 
 ---
 
